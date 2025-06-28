@@ -193,6 +193,21 @@ ${venueList}
         const timeResult = extractTimeFromText(text);
         startTime = timeResult.startTime;
         endTime = timeResult.endTime;
+      } else if (startTime && moment(startTime).isValid()) {
+        // 🔧 修復時區問題：如果AI返回的是UTC時間，轉換為本地時區格式
+        const startMoment = moment(startTime);
+        const endMoment = moment(endTime);
+        
+        // 檢查是否為UTC格式（包含Z或+00:00）
+        if (startTime.includes('Z') || startTime.includes('+00:00')) {
+          console.log('🔧 檢測到UTC時間，轉換為本地時區格式');
+          // 將UTC時間轉換為本地時間字符串
+          const localStart = moment.utc(startTime).utcOffset('+08:00');
+          const localEnd = moment.utc(endTime).utcOffset('+08:00');
+          startTime = localStart.format('YYYY-MM-DDTHH:mm:ss');
+          endTime = localEnd.format('YYYY-MM-DDTHH:mm:ss');
+          console.log('✅ 時間轉換完成:', { startTime, endTime });
+        }
       }
       
       const result = {
@@ -352,8 +367,8 @@ const extractTimeFromText = (text) => {
         const endMoment = dateBase.clone().hour(endHour).minute(endMinute).second(0);
         
         // 使用本地時間格式，避免時區轉換問題
-        startTime = startMoment.format('YYYY-MM-DDTHH:mm:ss.SSS') + '+08:00';
-        endTime = endMoment.format('YYYY-MM-DDTHH:mm:ss.SSS') + '+08:00';
+        startTime = startMoment.format('YYYY-MM-DDTHH:mm:ss');
+        endTime = endMoment.format('YYYY-MM-DDTHH:mm:ss');
         
         console.log('⏰ 解析到時間範圍:', {
           start: startMoment.format('YYYY-MM-DD HH:mm'),

@@ -227,7 +227,7 @@ const BookingPage = () => {
                 <div className="text-sm text-green-700 space-y-1">
                   <p><strong>預訂編號:</strong> {message.booking.id}</p>
                   <p><strong>場地:</strong> {message.booking.venueName}</p>
-                  <p><strong>時間:</strong> {moment(message.booking.startTime).utc().utcOffset('+08:00').format('YYYY-MM-DD HH:mm')} - {moment(message.booking.endTime).utc().utcOffset('+08:00').format('HH:mm')}</p>
+                  <p><strong>時間:</strong> {moment(message.booking.startTime).format('YYYY-MM-DD HH:mm')} - {moment(message.booking.endTime).format('HH:mm')}</p>
                   <p><strong>用途:</strong> {message.booking.purpose}</p>
                 </div>
                 
@@ -244,7 +244,7 @@ const BookingPage = () => {
                     <div className="text-xs text-blue-600 max-h-20 overflow-y-auto">
                       {message.recurringBookings.slice(0, 5).map((booking, index) => (
                         <div key={index}>
-                          {moment(booking.startTime).utc().utcOffset('+08:00').format('YYYY-MM-DD HH:mm')}
+                          {moment(booking.startTime).format('YYYY-MM-DD HH:mm')}
                         </div>
                       ))}
                       {message.recurringBookings.length > 5 && (
