@@ -705,9 +705,19 @@ router.post('/', async (req, res) => {
     if (parsed.venue && parsed.startTime && parsed.confidence > 0.3) {
       response.canProceed = true;
       
-      // 格式化時間顯示 (香港時區)
-      const startMoment = moment(parsed.startTime).utcOffset('+08:00');
-      const endMoment = moment(parsed.endTime).utcOffset('+08:00');
+      // 格式化時間顯示 - 正確處理本地時間
+      let startMoment, endMoment;
+      
+      // 檢查時間字符串是否包含時區信息
+      if (parsed.startTime.includes('Z') || parsed.startTime.includes('+') || parsed.startTime.includes('T') && parsed.startTime.length > 19) {
+        // 包含時區信息，需要轉換為香港時區
+        startMoment = moment(parsed.startTime).utcOffset('+08:00');
+        endMoment = moment(parsed.endTime).utcOffset('+08:00');
+      } else {
+        // 不包含時區信息，直接作為本地時間處理
+        startMoment = moment(parsed.startTime, 'YYYY-MM-DDTHH:mm:ss');
+        endMoment = moment(parsed.endTime, 'YYYY-MM-DDTHH:mm:ss');
+      }
       
       const suggestion = {
         venue: parsed.venue,
