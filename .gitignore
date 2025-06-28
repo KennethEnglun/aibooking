@@ -120,7 +120,8 @@ Thumbs.db
 
 # Data files
 backend/data/
-*.json
+backend/data/bookings.json
+backend/data/storage/*.json
 
 # Mac OS
 .DS_Store

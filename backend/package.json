@@ -1,0 +1,30 @@
+{
+  "name": "ai-booking-backend",
+  "version": "1.0.0",
+  "description": "AI場地預訂系統後端API",
+  "main": "server.js",
+  "scripts": {
+    "start": "NODE_ENV=production node server.js",
+    "dev": "NODE_ENV=development nodemon server.js",
+    "test": "echo \"暂无测试\" && exit 0",
+    "health": "curl -f http://localhost:${PORT:-5000}/health || exit 1"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "axios": "^1.5.0",
+    "moment": "^2.29.4",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "keywords": ["ai", "booking", "api", "railway"],
+  "author": "AI Booking System",
+  "license": "MIT"
+} 
