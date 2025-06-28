@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Calendar, MapPin, Clock, Users, Filter, RefreshCw } from 'lucide-react';
 import axios from 'axios';
 import moment from 'moment';
