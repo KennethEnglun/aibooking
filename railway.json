@@ -2,10 +2,10 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "echo '🔧 開始構建...' && pwd && ls -la && echo '📦 清理緩存...' && npm cache clean --force && cd backend && echo '📂 後端目錄:' && pwd && ls -la && echo '📦 強制安裝後端依賴...' && rm -rf node_modules package-lock.json && npm install --no-cache && echo '✅ 後端依賴安裝完成:' && ls -la node_modules | head -10 && cd ../frontend && echo '📂 前端目錄:' && pwd && ls -la && echo '📦 強制安裝前端依賴...' && rm -rf node_modules package-lock.json && npm install --no-cache && echo '✅ 前端依賴安裝完成' && echo '🏗️ 構建前端...' && npm run build && echo '✅ 前端構建完成:' && ls -la build && cd .. && echo '✅ 構建完成'"
+    "buildCommand": "echo '🔧 開始構建...' && cd backend && echo '📦 安裝後端依賴...' && npm install && echo '✅ 後端依賴($(ls node_modules | wc -l)個包)' && cd ../frontend && echo '📦 安裝前端依賴...' && npm install && echo '🏗️ 構建前端...' && npm run build && echo '✅ 構建完成'"
   },
   "deploy": {
-    "startCommand": "echo '🚀 開始啟動...' && ls -la && cd backend && echo '📂 當前目錄內容:' && ls -la && echo '📦 檢查node_modules:' && ls -la node_modules | head -10 && echo '🚀 啟動服務器...' && node server.js",
+    "startCommand": "echo '🚀 Railway啟動檢查...' && echo 'PORT='$PORT && echo 'PWD='$(pwd) && cd backend && echo '📂 後端文件:' && ls -la *.js *.json && echo '📦 依賴檢查:' && ls node_modules | wc -l && echo '個包已安裝' && echo '🚀 啟動服務器...' && node server.js",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 600,
     "healthcheckInterval": 30,
