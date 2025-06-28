@@ -3,6 +3,12 @@ import { Calendar, MapPin, Clock, Users, Filter, RefreshCw } from 'lucide-react'
 import axios from 'axios';
 import moment from 'moment';
 
+// 配置axios基礎URL（生產環境使用相對路徑）
+const api = axios.create({
+  baseURL: process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5000',
+  timeout: 10000
+});
+
 const SchedulePage = () => {
   const [bookings, setBookings] = useState([]);
   const [venues, setVenues] = useState([]);
@@ -14,13 +20,27 @@ const SchedulePage = () => {
   const fetchData = async () => {
     try {
       const [bookingsRes, venuesRes] = await Promise.all([
-        axios.get('/api/bookings'),
-        axios.get('/api/bookings/venues')
+        api.get('/api/bookings'),
+        api.get('/api/bookings/venues')
       ]);
       setBookings(bookingsRes.data);
-      setVenues(venuesRes.data);
+      
+      // 正確解析venues數據格式
+      if (venuesRes.data.success && venuesRes.data.data.VENUES) {
+        const venuesData = venuesRes.data.data.VENUES;
+        const allVenues = [
+          ...venuesData.classrooms,
+          ...venuesData.specialRooms
+        ];
+        setVenues(allVenues);
+        console.log('場地數據加載成功:', allVenues.length, '個場地');
+      } else {
+        console.error('場地數據格式異常:', venuesRes.data);
+        setVenues([]);
+      }
     } catch (error) {
       console.error('獲取數據失敗:', error);
+      setVenues([]);
     } finally {
       setLoading(false);
     }
@@ -32,7 +52,7 @@ const SchedulePage = () => {
       if (selectedDate) params.append('date', selectedDate);
       if (selectedVenue) params.append('venue', selectedVenue);
       
-      const response = await axios.get(`/api/admin/schedule?${params}`);
+      const response = await api.get(`/api/admin/schedule?${params}`);
       setBookings(response.data);
     } catch (error) {
       console.error('獲取預訂數據失敗:', error);
