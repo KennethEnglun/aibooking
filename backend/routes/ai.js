@@ -100,7 +100,7 @@ ${venueList}
 
 【理解規則】
 1. 場地：識別用戶提到的場地名稱，支持簡稱（如"音樂"指"音樂室"）
-2. 時間：支持多種中文時間表達方式
+2. 時間：支持多種中文時間表達方式，使用中國時區(+08:00)
 3. 用途：識別預訂目的
 4. 時長：如果只說開始時間，默認2小時；如果說"至"某時間，計算實際時長
 
@@ -108,16 +108,18 @@ ${venueList}
 請嚴格按照以下JSON格式返回，不要有任何其他文字：
 {
   "venue": "精確的場地名稱",
-  "startTime": "ISO8601格式時間",
-  "endTime": "ISO8601格式時間",
+  "startTime": "YYYY-MM-DDTHH:mm:ss.SSS+08:00格式",
+  "endTime": "YYYY-MM-DDTHH:mm:ss.SSS+08:00格式",
   "purpose": "預訂用途",
   "confidence": 0.9
 }
 
 【時間解析示例】
-- "2025年6月30日下午四點" → "2025-06-30T16:00:00.000Z"
-- "明天上午10點" → (明天的ISO時間)
-- "下週三晚上7點" → (下週三19:00的ISO時間)
+- "2025年6月30日下午四點" → "2025-06-30T16:00:00.000+08:00"
+- "明天上午10點" → "2025-06-29T10:00:00.000+08:00"（如果今天是28日）
+- "下午三點至六點" → 開始"15:00"，結束"18:00"
+
+重要：時間必須使用中國時區格式(+08:00)，不要使用UTC時間！
 
 請分析用戶輸入並返回JSON結果：`;
 
@@ -345,12 +347,19 @@ const extractTimeFromText = (text) => {
           endMinute = startMinute;
         }
         
-        startTime = dateBase.clone().hour(startHour).minute(startMinute).second(0).toISOString();
-        endTime = dateBase.clone().hour(endHour).minute(endMinute).second(0).toISOString();
+        // 🔧 修復時區問題：使用本地時間格式而不是UTC
+        const startMoment = dateBase.clone().hour(startHour).minute(startMinute).second(0);
+        const endMoment = dateBase.clone().hour(endHour).minute(endMinute).second(0);
+        
+        // 使用本地時間格式，避免時區轉換問題
+        startTime = startMoment.format('YYYY-MM-DDTHH:mm:ss.SSS') + '+08:00';
+        endTime = endMoment.format('YYYY-MM-DDTHH:mm:ss.SSS') + '+08:00';
         
         console.log('⏰ 解析到時間範圍:', {
-          start: moment(startTime).format('YYYY-MM-DD HH:mm'),
-          end: moment(endTime).format('YYYY-MM-DD HH:mm')
+          start: startMoment.format('YYYY-MM-DD HH:mm'),
+          end: endMoment.format('YYYY-MM-DD HH:mm'),
+          startTime: startTime,
+          endTime: endTime
         });
         break;
         
