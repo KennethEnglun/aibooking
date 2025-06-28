@@ -1,0 +1,18 @@
+# 簡化的Railway部署配置（備用方案）
+[phases.setup]
+nixPkgs = ['nodejs', 'npm']
+
+[phases.install]
+cmds = ['npm ci']
+
+[phases.build]
+cmds = [
+  'npm run install-all',
+  'cd frontend && npm run build'
+]
+
+[start]
+cmd = 'npm start'
+
+[variables]
+NODE_ENV = 'production' 
