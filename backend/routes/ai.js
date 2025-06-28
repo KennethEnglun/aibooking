@@ -421,20 +421,23 @@ const extractTimeFromText = (text) => {
     }
   }
   
-  // 2. 解析時間範圍 - 增強版
+  // 2. 解析時間範圍 - 修復版本
   const timeRangePatterns = [
-    // 支持"時"字
-    /(下午|上午|中午|晚上|早上)([一二三四五六七八九十\d]+)[時點]([一二三四五六七八九十\d]+)?分?[至到]([一二三四五六七八九十\d]+)[時點]([一二三四五六七八九十\d]+)?分?/,
-    /(下午|上午|中午|晚上|早上)([一二三四五六七八九十\d]+)[時點]([一二三四五六七八九十\d]+)?分?[至到](下午|上午|中午|晚上|早上)?([一二三四五六七八九十\d]+)[時點]([一二三四五六七八九十\d]+)?分?/,
-    // 原有格式
-    /([一二三四五六七八九十\d]+)[時點]([一二三四五六七八九十\d]+)?分?[至到]([一二三四五六七八九十\d]+)[時點]([一二三四五六七八九十\d]+)?分?/,
-    /(下午|上午|中午|晚上|早上)([一二三四五六七八九十\d]+)[時點]/
+    // 時間範圍：支持"三點至六點"、"下午三點至六點"等
+    /([一二三四五六七八九十\d]+)[點時]([一二三四五六七八九十\d]+)?分?[至到]([一二三四五六七八九十\d]+)[點時]([一二三四五六七八九十\d]+)?分?/,
+    /(下午|上午|中午|晚上|早上)([一二三四五六七八九十\d]+)[點時]([一二三四五六七八九十\d]+)?分?[至到]([一二三四五六七八九十\d]+)[點時]([一二三四五六七八九十\d]+)?分?/,
+    /(下午|上午|中午|晚上|早上)([一二三四五六七八九十\d]+)[點時]([一二三四五六七八九十\d]+)?分?[至到](下午|上午|中午|晚上|早上)?([一二三四五六七八九十\d]+)[點時]([一二三四五六七八九十\d]+)?分?/,
+    // 單一時間
+    /(下午|上午|中午|晚上|早上)([一二三四五六七八九十\d]+)[點時]([一二三四五六七八九十\d]+)?分?/,
+    /([一二三四五六七八九十\d]+)[點時]([一二三四五六七八九十\d]+)?分?/
   ];
   
   for (const pattern of timeRangePatterns) {
     const match = text.match(pattern);
     if (match) {
       try {
+        console.log('🔍 時間匹配結果:', match);
+        
         let startHour = 0;
         let startMinute = 0;
         let endHour = 0;
@@ -442,97 +445,118 @@ const extractTimeFromText = (text) => {
         let startPeriod = '';
         let endPeriod = '';
         
-        console.log('🔍 時間匹配結果:', match);
-        
         if (match[0].includes('至') || match[0].includes('到')) {
-          // 時間範圍
-                      console.log('📝 詳細匹配信息:', {
-              fullMatch: match[0],
-              group1: match[1], // 時段 (下午)
-              group2: match[2], // 開始小時 (三)
-              group3: match[3], // 開始分鐘
-              group4: match[4], // 結束小時 (六)
-              group5: match[5], // 結束分鐘
-              group6: match[6]
-            });
-          
-          if (match.length >= 7 && match[5] && match[4]) {
-            // 格式: 下午三時至上午六時 或 下午三時至晚上六時
-            startPeriod = match[1] || '';
+          // 時間範圍處理
+          if (match[1] && (match[1].includes('午') || match[1].includes('晚') || match[1].includes('早'))) {
+            // 有時段的格式：下午三點至六點
+            startPeriod = match[1];
             startHour = chineseNumberToInt(match[2]);
             startMinute = match[3] ? chineseNumberToInt(match[3]) : 0;
-            endPeriod = match[4]; // 明確的結束時段
-            endHour = chineseNumberToInt(match[5]);
-            endMinute = match[6] ? chineseNumberToInt(match[6]) : 0;
-          } else {
-            // 格式: 下午三時至六時
-            startPeriod = match[1] || '';
-            startHour = chineseNumberToInt(match[2]);
-            startMinute = match[3] ? chineseNumberToInt(match[3]) : 0;
-            endHour = chineseNumberToInt(match[4]);
-            endMinute = match[5] ? chineseNumberToInt(match[5]) : 0;
-            endPeriod = startPeriod; // 使用相同時段
             
-            console.log('📋 基本解析:', { 
-              startPeriod, 
-              startHour, 
-              endHour, 
-              endPeriod,
-              原始match2: match[2],
-              原始match4: match[4]
-            });
-          }
-          
-          // 處理時段轉換
-          console.log('🕐 時段轉換前:', { startPeriod, endPeriod, startHour, endHour });
-          
-          if (startPeriod && (startPeriod.includes('下午') || startPeriod.includes('晚上')) && startHour < 12) {
-            startHour += 12;
-            console.log('🕐 開始時間轉換為下午:', startHour);
-          }
-          if (endPeriod && (endPeriod.includes('下午') || endPeriod.includes('晚上')) && endHour < 12) {
-            endHour += 12;
-            console.log('🕐 結束時間轉換為下午:', endHour);
-          }
-          
-          // 如果沒有明確指定結束時段，但開始時段是下午，結束時間也應該是下午
-          if (startPeriod && (startPeriod.includes('下午') || startPeriod.includes('晚上')) && !endPeriod && endHour < 12) {
-            endHour += 12;
-            console.log('🕐 結束時間自動轉換為下午:', endHour);
-          }
-          
-          // 特殊處理：如果結束時間仍然小於開始時間
-          if (endHour <= startHour) {
-            console.log('⚠️ 結束時間小於等於開始時間，調整中...');
-            if (startHour >= 12) {
-              // 可能需要跨日
-              if (endHour + 12 > startHour) {
-                endHour += 12;
-                console.log('🕐 結束時間調整為:', endHour);
-              }
+            if (match[4] && (match[4].includes('午') || match[4].includes('晚') || match[4].includes('早'))) {
+              // 明確指定結束時段：下午三點至晚上六點
+              endPeriod = match[4];
+              endHour = chineseNumberToInt(match[5]);
+              endMinute = match[6] ? chineseNumberToInt(match[6]) : 0;
+            } else {
+              // 只有開始時段：下午三點至六點
+              endPeriod = startPeriod;
+              endHour = chineseNumberToInt(match[4]);
+              endMinute = match[5] ? chineseNumberToInt(match[5]) : 0;
             }
+          } else {
+            // 沒有時段的格式：三點至六點
+            startHour = chineseNumberToInt(match[1]);
+            startMinute = match[2] ? chineseNumberToInt(match[2]) : 0;
+            endHour = chineseNumberToInt(match[3]);
+            endMinute = match[4] ? chineseNumberToInt(match[4]) : 0;
+            
+                         // 智能推斷時段 - 優先考慮下午時間
+             if (startHour >= 1 && startHour <= 6 && endHour >= 3 && endHour <= 11) {
+               // 1-6點且結束時間在3-11點之間，可能是下午時間
+               startPeriod = '下午';
+               endPeriod = '下午';
+             } else if (startHour <= 6) {
+               startPeriod = '早上';
+               endPeriod = '早上';
+             } else if (startHour <= 11) {
+               startPeriod = '上午';
+               endPeriod = '上午';
+             } else if (startHour <= 13) {
+               startPeriod = '中午';
+               endPeriod = '下午';
+             } else if (startHour <= 18) {
+               startPeriod = '下午';
+               endPeriod = '下午';
+             } else {
+               startPeriod = '晚上';
+               endPeriod = '晚上';
+             }
           }
           
-          console.log('🕐 最終時間:', { startHour, endHour });
+          console.log('📋 時間範圍解析:', { 
+            startPeriod, 
+            startHour, 
+            startMinute,
+            endPeriod,
+            endHour, 
+            endMinute
+          });
           
         } else {
           // 單一時間
-          startPeriod = match[1] || '';
-          startHour = chineseNumberToInt(match[2]);
-          startMinute = match[3] ? chineseNumberToInt(match[3]) : 0;
-          
-          if (startPeriod && (startPeriod.includes('下午') || startPeriod.includes('晚上')) && startHour < 12) {
-            startHour += 12;
+          if (match[1] && (match[1].includes('午') || match[1].includes('晚') || match[1].includes('早'))) {
+            startPeriod = match[1];
+            startHour = chineseNumberToInt(match[2]);
+            startMinute = match[3] ? chineseNumberToInt(match[3]) : 0;
+          } else {
+            startHour = chineseNumberToInt(match[1]);
+            startMinute = match[2] ? chineseNumberToInt(match[2]) : 0;
+            
+                         // 智能推斷時段 - 優先考慮下午時間
+             if (startHour >= 1 && startHour <= 6) {
+               // 1-6點，優先考慮下午
+               startPeriod = '下午';
+             } else if (startHour <= 11) {
+               startPeriod = '上午';
+             } else if (startHour <= 13) {
+               startPeriod = '中午';
+             } else if (startHour <= 18) {
+               startPeriod = '下午';
+             } else {
+               startPeriod = '晚上';
+             }
           }
           
           // 默認2小時
           endHour = startHour + 2;
           endMinute = startMinute;
+          endPeriod = startPeriod;
         }
+        
+        // 時段轉換為24小時制
+        if (startPeriod && (startPeriod.includes('下午') || startPeriod.includes('晚上')) && startHour < 12) {
+          startHour += 12;
+        }
+        if (endPeriod && (endPeriod.includes('下午') || endPeriod.includes('晚上')) && endHour < 12) {
+          endHour += 12;
+        }
+        
+        // 處理跨日情況
+        if (endHour < startHour) {
+          endHour += 24;  // 第二天
+        }
+        
+        console.log('🕐 最終24小時制時間:', { startHour, startMinute, endHour, endMinute });
         
         // 創建時間對象 (香港時區)
         const startMoment = dateBase.clone().hour(startHour).minute(startMinute).second(0);
-        const endMoment = dateBase.clone().hour(endHour).minute(endMinute).second(0);
+        let endMoment = dateBase.clone().hour(endHour % 24).minute(endMinute).second(0);
+        
+        // 如果結束時間跨日，則加一天
+        if (endHour >= 24) {
+          endMoment = endMoment.add(1, 'day');
+        }
         
         // 使用簡單的本地時間格式
         startTime = startMoment.format('YYYY-MM-DDTHH:mm:ss');
