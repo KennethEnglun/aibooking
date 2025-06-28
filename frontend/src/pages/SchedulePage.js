@@ -23,15 +23,17 @@ const SchedulePage = () => {
         api.get('/api/bookings'),
         api.get('/api/bookings/venues')
       ]);
-      setBookings(bookingsRes.data);
-      
-      // 正確解析venues數據格式
-      if (venuesRes.data.success && venuesRes.data.data.VENUES) {
-        const venuesData = venuesRes.data.data.VENUES;
-        const allVenues = [
-          ...venuesData.classrooms,
-          ...venuesData.specialRooms
-        ];
+
+      // /api/bookings 回傳 { success, data } 結構
+      if (bookingsRes.data && bookingsRes.data.success) {
+        setBookings(bookingsRes.data.data);
+      } else {
+        setBookings([]);
+      }
+
+      // venues API 回傳 { success, data: [...] }
+      if (venuesRes.data && venuesRes.data.success) {
+        const allVenues = venuesRes.data.data;
         setVenues(allVenues);
         console.log('場地數據加載成功:', allVenues.length, '個場地');
       } else {
@@ -53,7 +55,11 @@ const SchedulePage = () => {
       if (selectedVenue) params.append('venue', selectedVenue);
       
       const response = await api.get(`/api/admin/schedule?${params}`);
-      setBookings(response.data);
+      if (response.data && response.data.success) {
+        setBookings(response.data.data);
+      } else {
+        setBookings([]);
+      }
     } catch (error) {
       console.error('獲取預訂數據失敗:', error);
     }

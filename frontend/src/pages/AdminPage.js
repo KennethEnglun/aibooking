@@ -32,7 +32,7 @@ const AdminPage = () => {
     setAuthError('');
     
     try {
-      await api.post('/admin/login', { password });
+      await api.post('/api/admin/login', { password });
       setIsAuthenticated(true);
       setPassword('');
     } catch (error) {
@@ -44,7 +44,7 @@ const AdminPage = () => {
 
   const fetchDashboardData = async () => {
     try {
-      const response = await api.get('/admin/dashboard');
+      const response = await api.get('/api/admin/dashboard');
       setDashboardData(response.data);
     } catch (error) {
       console.error('獲取儀表板數據失敗:', error);
@@ -53,7 +53,7 @@ const AdminPage = () => {
 
   const fetchBookings = async () => {
     try {
-      const response = await api.get('/bookings');
+      const response = await api.get('/api/bookings');
       setBookings(response.data.sort((a, b) => moment(b.createdAt).diff(moment(a.createdAt))));
     } catch (error) {
       console.error('獲取預訂數據失敗:', error);
@@ -64,7 +64,7 @@ const AdminPage = () => {
     if (!window.confirm('確定要刪除這個預訂嗎？')) return;
     
     try {
-      await api.delete(`/admin/bookings/${bookingId}`, { 
+      await api.delete(`/api/admin/bookings/${bookingId}`, { 
         data: { password } 
       });
       fetchBookings();
@@ -87,7 +87,7 @@ const AdminPage = () => {
     e.preventDefault();
     
     try {
-      await api.put(`/admin/bookings/${editingBooking.id}`, {
+      await api.put(`/api/admin/bookings/${editingBooking.id}`, {
         ...editingBooking,
         password
       });

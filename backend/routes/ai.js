@@ -796,6 +796,24 @@ const extractTimeFromText = (text) => {
     }
   }
   
+  // 若未偵測到時間則判斷是否為全天或使用預設時間
+  if (!startTime) {
+    const fullDayKeywords = ['全日', '全天', '整天', '一整天'];
+    const isFullDay = fullDayKeywords.some(k => text.includes(k));
+
+    if (isFullDay || !timeRangePatterns.some(p => p.test(text))) {
+      // 全日預訂
+      startTime = dateBase.clone().startOf('day').format('YYYY-MM-DDTHH:mm:ss');
+      endTime   = dateBase.clone().endOf('day').format('YYYY-MM-DDTHH:mm:ss');
+      console.log('🌙 偵測為全天預訂:', { startTime, endTime });
+    } else {
+      // 預設 2 小時區段（09:00-11:00）
+      startTime = dateBase.clone().hour(9).minute(0).second(0).format('YYYY-MM-DDTHH:mm:ss');
+      endTime   = dateBase.clone().hour(11).minute(0).second(0).format('YYYY-MM-DDTHH:mm:ss');
+      console.log('⌛ 未提供時間，使用預設 09:00-11:00:', { startTime, endTime });
+    }
+  }
+
   return { startTime, endTime };
 };
 
