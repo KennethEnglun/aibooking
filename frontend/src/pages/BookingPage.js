@@ -61,28 +61,40 @@ const BookingPage = () => {
     setIsLoading(true);
 
     try {
-      // 調用AI解析API
-      const response = await axios.post('/api/ai/parse', {
+      // 調用增強的AI解析API
+      const response = await axios.post('/api/ai', {
         text: userMessage
       });
 
-      const { canProceed, suggestions, error, help, aiProvider } = response.data;
+      const { success, canProceed, suggestions, error, help, parsed } = response.data;
 
-      if (canProceed && suggestions.length > 0) {
+      if (success && canProceed && suggestions.length > 0) {
         const suggestion = suggestions[0];
-        addMessage('ai', `我理解了您的預訂需求！${aiProvider ? ` (由${aiProvider}AI提供支持)` : ''}`, {
+        const aiProvider = parsed?.aiProvider || 'AI';
+        addMessage('ai', `我理解了您的預訂需求！(由${aiProvider}提供支持)`, {
           suggestion: suggestion,
           showConfirm: true,
           aiProvider: aiProvider
         });
       } else if (error) {
-        addMessage('ai', error, { help: help, aiProvider: aiProvider });
+        const aiProvider = parsed?.aiProvider || 'AI';
+        addMessage('ai', error, { 
+          help: help, 
+          aiProvider: aiProvider 
+        });
       } else {
-        addMessage('ai', '抱歉，我無法完全理解您的需求。請提供更詳細的信息。', { aiProvider: aiProvider });
+        const aiProvider = parsed?.aiProvider || 'AI';
+        addMessage('ai', '抱歉，我無法完全理解您的需求。請提供更詳細的信息。', { 
+          aiProvider: aiProvider 
+        });
       }
     } catch (error) {
       console.error('AI解析錯誤:', error);
-      addMessage('ai', '抱歉，處理您的請求時遇到了問題。請稍後再試。');
+      if (error.response?.data?.error) {
+        addMessage('ai', `❌ ${error.response.data.error}`);
+      } else {
+        addMessage('ai', '抱歉，處理您的請求時遇到了問題。請稍後再試。');
+      }
     } finally {
       setIsLoading(false);
     }
