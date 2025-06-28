@@ -1,17 +1,15 @@
 {
   "name": "ai-booking-system",
-  "version": "1.0.0",
-  "description": "AI驅動的場地預訂系統",
+  "version": "2.1.0",
+  "description": "AI場地預訂系統 - 升級版AI理解能力",
   "main": "backend/server.js",
   "scripts": {
-    "start": "cd backend && npm start",
+    "start": "cd backend && node server.js",
+    "dev": "concurrently \"cd backend && npm run dev\" \"cd frontend && npm start\"",
     "build": "cd frontend && npm run build",
-    "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "server": "cd backend && npm run dev",
-    "client": "cd frontend && npm start",
-    "install-all": "cd backend && npm install && cd ../frontend && npm install"
+    "test": "cd backend && npm test"
   },
-  "keywords": ["ai", "booking", "venue", "reservation", "railway"],
+  "keywords": ["ai", "booking", "venues", "deepseek", "智能預訂"],
   "author": "AI Booking System",
   "license": "MIT",
   "engines": {

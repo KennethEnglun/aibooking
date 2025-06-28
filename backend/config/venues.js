@@ -40,13 +40,68 @@ const getVenueById = (id) => {
   return getAllVenues().find(venue => venue.id === id);
 };
 
-// 根據名稱搜索場地
+// 根據名稱搜索場地 - 增強版本
 const findVenueByName = (name) => {
+  if (!name) return null;
+  
   const allVenues = getAllVenues();
-  return allVenues.find(venue => 
-    venue.name.includes(name) || 
-    venue.name.toLowerCase().includes(name.toLowerCase())
+  const searchName = name.toLowerCase().trim();
+  
+  // 場地別名映射
+  const venueAliases = {
+    '音樂室': ['音樂室', '音樂', '琴房', '鋼琴室', 'music', 'music room'],
+    '電腦室': ['電腦室', '電腦', '機房', 'computer', 'computer room', 'pc room'],
+    '活動室': ['活動室', '活動', '多功能室', 'activity', 'activity room'],
+    '英語室': ['英語室', '英語', '外語室', 'english', 'english room'],
+    '操場': ['操場', '運動場', '田徑場', 'playground', 'field'],
+    '禮堂': ['禮堂', '大禮堂', '演講廳', 'auditorium', 'hall'],
+    '壁球室': ['壁球室', '壁球', 'squash', 'squash court'],
+    '電競室': ['電競室', '電競', '遊戲室', 'esports', 'gaming room'],
+    '輔導室': ['輔導室', '輔導', '諮詢室', 'counseling', 'counseling room']
+  };
+  
+  // 1. 精確匹配
+  let venue = allVenues.find(v => v.name.toLowerCase() === searchName);
+  if (venue) return venue;
+  
+  // 2. 包含匹配
+  venue = allVenues.find(v => 
+    v.name.toLowerCase().includes(searchName) || 
+    searchName.includes(v.name.toLowerCase())
   );
+  if (venue) return venue;
+  
+  // 3. 別名匹配
+  for (const [venueName, aliases] of Object.entries(venueAliases)) {
+    if (aliases.some(alias => 
+      alias.toLowerCase().includes(searchName) || 
+      searchName.includes(alias.toLowerCase())
+    )) {
+      venue = allVenues.find(v => v.name === venueName);
+      if (venue) return venue;
+    }
+  }
+  
+  // 4. 房間號匹配 (101, 201, etc.)
+  const roomNumberMatch = searchName.match(/(\d{3})/);
+  if (roomNumberMatch) {
+    const roomNumber = roomNumberMatch[1];
+    venue = allVenues.find(v => v.name.includes(roomNumber));
+    if (venue) return venue;
+  }
+  
+  // 5. 模糊匹配 - 移除常見後綴再匹配
+  const cleanedName = searchName.replace(/[室房間]/g, '');
+  if (cleanedName.length > 0) {
+    venue = allVenues.find(v => {
+      const cleanedVenueName = v.name.toLowerCase().replace(/[室房間]/g, '');
+      return cleanedVenueName.includes(cleanedName) || cleanedName.includes(cleanedVenueName);
+    });
+    if (venue) return venue;
+  }
+  
+  console.log(`⚠️ 未找到匹配的場地: "${name}" (清理後: "${searchName}")`);
+  return null;
 };
 
 module.exports = {

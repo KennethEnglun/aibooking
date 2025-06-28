@@ -86,33 +86,43 @@ const createRecurringBookings = async (bookingData, recurringInfo) => {
   return bookings;
 };
 
-// 使用DeepSeek API處理自然語言
+// 使用DeepSeek API處理自然語言 - 增強版本
 const processNaturalLanguageWithAI = async (text) => {
-  const venues = getAllVenues();
-  const venueNames = venues.map(v => v.name).join('、');
+  console.log('🤖 開始處理用戶輸入:', text);
   
-  const systemPrompt = `你是一個專業的場地預訂助手。用戶會用中文自然語言描述他們的預訂需求，你需要從中提取以下信息：
+  const venues = getAllVenues();
+  const venueList = venues.map(v => `${v.name}(${v.type})`).join('、');
+  
+  const systemPrompt = `你是一個專業的中文場地預訂助手。你的任務是理解用戶的自然語言預訂需求並提取關鍵信息。
 
-可用場地：${venueNames}
+【可用場地列表】
+${venueList}
 
-請從用戶輸入中提取：
-1. 場地名稱（必須是上述場地之一）
-2. 開始時間（轉換為ISO格式）
-3. 結束時間（如果沒有明確說明，默認2小時）
-4. 用途/目的
+【理解規則】
+1. 場地：識別用戶提到的場地名稱，支持簡稱（如"音樂"指"音樂室"）
+2. 時間：支持多種中文時間表達方式
+3. 用途：識別預訂目的
+4. 時長：如果只說開始時間，默認2小時；如果說"至"某時間，計算實際時長
 
-請只返回JSON格式的結果，不要任何其他文字：
+【輸出格式】
+請嚴格按照以下JSON格式返回，不要有任何其他文字：
 {
-  "venue": "場地名稱",
-  "startTime": "ISO時間格式",
-  "endTime": "ISO時間格式", 
-  "purpose": "用途",
-  "confidence": 0.0-1.0的信心分數
+  "venue": "精確的場地名稱",
+  "startTime": "ISO8601格式時間",
+  "endTime": "ISO8601格式時間",
+  "purpose": "預訂用途",
+  "confidence": 0.9
 }
 
-如果無法提取完整信息，請返回confidence為0。`;
+【時間解析示例】
+- "2025年6月30日下午四點" → "2025-06-30T16:00:00.000Z"
+- "明天上午10點" → (明天的ISO時間)
+- "下週三晚上7點" → (下週三19:00的ISO時間)
+
+請分析用戶輸入並返回JSON結果：`;
 
   try {
+    console.log('📡 調用DeepSeek API...');
     const response = await axios.post(
       process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions',
       {
@@ -128,277 +138,233 @@ const processNaturalLanguageWithAI = async (text) => {
           }
         ],
         temperature: 0.1,
-        max_tokens: 500
+        max_tokens: 800,
+        top_p: 0.9
       },
       {
         headers: {
           'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 15000
       }
     );
 
-    const aiResponse = response.data.choices[0].message.content;
-    console.log('DeepSeek AI 回應:', aiResponse);
+    const aiResponse = response.data.choices[0].message.content.trim();
+    console.log('🤖 DeepSeek 原始回應:', aiResponse);
+    
+    // 清理回應，移除可能的markdown格式
+    let cleanedResponse = aiResponse;
+    if (aiResponse.includes('```')) {
+      const jsonMatch = aiResponse.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+      if (jsonMatch) {
+        cleanedResponse = jsonMatch[1];
+      }
+    }
+    
+    console.log('🧹 清理後的回應:', cleanedResponse);
     
     // 嘗試解析AI回應
     try {
-      const parsed = JSON.parse(aiResponse);
+      const parsed = JSON.parse(cleanedResponse);
+      console.log('📋 解析後的數據:', parsed);
       
-      // 驗證場地是否存在
-      const venue = findVenueByName(parsed.venue);
-      if (venue) {
-        return {
-          venue: venue,
-          startTime: parsed.startTime,
-          endTime: parsed.endTime,
-          purpose: parsed.purpose || '場地使用',
-          confidence: parsed.confidence || 0.8
-        };
+      // 智能場地匹配
+      let venue = null;
+      if (parsed.venue) {
+        venue = findVenueByName(parsed.venue);
+        console.log('🏢 場地匹配結果:', venue ? venue.name : '未找到');
+        
+        // 如果精確匹配失敗，嘗試從原文本中提取
+        if (!venue) {
+          console.log('🔍 嘗試從原文本提取場地...');
+          venue = extractVenueFromText(text);
+        }
       }
+      
+      // 智能時間解析和驗證
+      let startTime = parsed.startTime;
+      let endTime = parsed.endTime;
+      
+      if (startTime && !moment(startTime).isValid()) {
+        console.log('⚠️ AI返回的開始時間無效，嘗試重新解析');
+        const timeResult = extractTimeFromText(text);
+        startTime = timeResult.startTime;
+        endTime = timeResult.endTime;
+      }
+      
+      const result = {
+        venue: venue,
+        startTime: startTime,
+        endTime: endTime,
+        purpose: parsed.purpose || extractPurposeFromText(text),
+        confidence: venue && startTime ? Math.max(parsed.confidence || 0.8, 0.7) : 0.3,
+        aiProvider: 'DeepSeek',
+        debug: {
+          originalAiResponse: aiResponse,
+          parsedData: parsed,
+          venueFound: !!venue,
+          timeValid: !!startTime
+        }
+      };
+      
+      console.log('✅ AI處理結果:', result);
+      return result;
+      
     } catch (parseError) {
-      console.error('解析AI回應失敗:', parseError);
+      console.error('❌ 解析AI回應失敗:', parseError.message);
+      console.log('🔄 使用後備解析邏輯');
     }
     
-    // 如果AI解析失敗，使用後備邏輯
-    return await fallbackProcessing(text);
-    
   } catch (error) {
-    console.error('DeepSeek API 調用失敗:', error.message);
-    // 使用後備邏輯
-    return await fallbackProcessing(text);
+    console.error('❌ DeepSeek API 調用失敗:', error.message);
+    console.log('🔄 使用後備處理邏輯');
   }
+  
+  // 使用增強的後備邏輯
+  return await enhancedFallbackProcessing(text);
 };
 
-// 後備處理邏輯（原來的模擬AI）
-const fallbackProcessing = async (text) => {
-  const result = {
-    venue: null,
-    startTime: null,
-    endTime: null,
-    purpose: null,
-    confidence: 0,
-    recurring: null // 新增：重複預訂信息
-  };
+// 從文本中提取場地
+const extractVenueFromText = (text) => {
+  const venues = getAllVenues();
   
-  // 時間解析 - 支持多種格式
+  // 直接匹配
+  for (const venue of venues) {
+    if (text.includes(venue.name)) {
+      console.log('🎯 直接匹配到場地:', venue.name);
+      return venue;
+    }
+  }
+  
+  // 使用增強的查找功能
+  const keywords = ['音樂', '電腦', '活動', '英語', '操場', '禮堂', '壁球', '電競', '輔導'];
+  for (const keyword of keywords) {
+    if (text.includes(keyword)) {
+      const venue = findVenueByName(keyword);
+      if (venue) {
+        console.log('🎯 關鍵詞匹配到場地:', venue.name);
+        return venue;
+      }
+    }
+  }
+  
+  // 房間號匹配
+  const roomMatch = text.match(/(\d{3})[號]?[室房間]?/);
+  if (roomMatch) {
+    const venue = findVenueByName(roomMatch[1]);
+    if (venue) {
+      console.log('🎯 房間號匹配到場地:', venue.name);
+      return venue;
+    }
+  }
+  
+  return null;
+};
+
+// 從文本中提取時間
+const extractTimeFromText = (text) => {
+  console.log('⏰ 開始解析時間:', text);
+  
+  let startTime = null;
+  let endTime = null;
   let dateBase = moment();
-  let timeMatched = false;
   
-  // 1. 具體日期格式匹配
-  const dateFormats = [
-    /(\d{4})[年\-\/](\d{1,2})[月\-\/](\d{1,2})[日]?/,  // 2024年1月15日 or 2024-1-15
-    /(\d{1,2})[月\-\/](\d{1,2})[日]?/,                // 1月15日 or 1-15
-    /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/,         // 1/15/2024 or 1-15-2024
-    /(\d{1,2})[\/\-](\d{1,2})/                       // 1/15 or 1-15
+  // 1. 解析具體日期
+  const datePatterns = [
+    /(\d{4})年(\d{1,2})月(\d{1,2})日/,  // 2025年6月30日
+    /(\d{1,2})月(\d{1,2})日/,           // 6月30日
+    /(\d{4})-(\d{1,2})-(\d{1,2})/,     // 2025-6-30
+    /(\d{1,2})\/(\d{1,2})\/(\d{4})/    // 6/30/2025
   ];
   
-  for (const format of dateFormats) {
-    const match = text.match(format);
+  for (const pattern of datePatterns) {
+    const match = text.match(pattern);
     if (match) {
       try {
-        if (match[0].includes('年') || match[0].includes('-') && match[3]) {
-          // 完整年月日
-          const year = match[1].length === 4 ? match[1] : match[3];
-          const month = match[2];
-          const day = match[1].length === 4 ? match[3] : match[1];
-          dateBase = moment(`${year}-${month}-${day}`, 'YYYY-M-D');
+        if (match[0].includes('年')) {
+          dateBase = moment(`${match[1]}-${match[2]}-${match[3]}`, 'YYYY-M-D');
         } else if (match[0].includes('月')) {
-          // 月日格式
-          dateBase = moment().month(parseInt(match[1]) - 1).date(parseInt(match[2]));
-          if (dateBase.isBefore(moment())) {
-            dateBase.add(1, 'year'); // 如果日期已過，設為明年
-          }
-        } else {
-          // 數字格式 MM/DD
-          dateBase = moment().month(parseInt(match[1]) - 1).date(parseInt(match[2]));
-          if (dateBase.isBefore(moment())) {
-            dateBase.add(1, 'year');
-          }
+          dateBase = moment().year(new Date().getFullYear()).month(parseInt(match[1]) - 1).date(parseInt(match[2]));
+        } else if (match[0].includes('-')) {
+          dateBase = moment(`${match[1]}-${match[2]}-${match[3]}`, 'YYYY-M-D');
         }
         
         if (dateBase.isValid()) {
-          result.confidence += 0.3;
-          timeMatched = true;
+          console.log('📅 解析到日期:', dateBase.format('YYYY-MM-DD'));
           break;
         }
       } catch (e) {
-        console.log('日期解析錯誤:', e);
+        console.log('⚠️ 日期解析失敗:', e.message);
       }
     }
   }
   
-  // 2. 相對時間詞匹配
-  if (!timeMatched) {
-    if (text.includes('今天') || text.includes('今日')) {
-      dateBase = moment();
-      result.confidence += 0.2;
-      timeMatched = true;
-    } else if (text.includes('明天') || text.includes('明日')) {
-      dateBase = moment().add(1, 'day');
-      result.confidence += 0.2;
-      timeMatched = true;
-    } else if (text.includes('後天')) {
-      dateBase = moment().add(2, 'days');
-      result.confidence += 0.2;
-      timeMatched = true;
-    } else if (text.includes('下週') || text.includes('下周')) {
-      dateBase = moment().add(1, 'week');
-      result.confidence += 0.2;
-      timeMatched = true;
-    }
-  }
-  
-  // 3. 星期匹配
-  const weekdays = {
-    '星期一': 1, '週一': 1, '周一': 1, '禮拜一': 1,
-    '星期二': 2, '週二': 2, '周二': 2, '禮拜二': 2,
-    '星期三': 3, '週三': 3, '周三': 3, '禮拜三': 3,
-    '星期四': 4, '週四': 4, '周四': 4, '禮拜四': 4,
-    '星期五': 5, '週五': 5, '周五': 5, '禮拜五': 5,
-    '星期六': 6, '週六': 6, '周六': 6, '禮拜六': 6,
-    '星期日': 0, '週日': 0, '周日': 0, '禮拜日': 0, '星期天': 0
-  };
-  
-  for (const [weekday, dayNum] of Object.entries(weekdays)) {
-    if (text.includes(weekday)) {
-      if (!timeMatched) {
-        // 找到下一個該星期幾
-        const today = moment();
-        const targetDay = today.clone().day(dayNum);
-        if (targetDay.isSameOrBefore(today)) {
-          targetDay.add(1, 'week');
-        }
-        dateBase = targetDay;
-        timeMatched = true;
-      }
-      result.confidence += 0.2;
-      break;
-    }
-  }
-  
-  // 4. 重複預訂檢測
-  const recurringPatterns = [
-    { pattern: /每週?[一二三四五六日天]/, type: 'weekly' },
-    { pattern: /每個?(星期|週|周)[一二三四五六日天]/, type: 'weekly' },
-    { pattern: /逢(星期|週|周)[一二三四五六日天]/, type: 'weekly' },
-    { pattern: /每天/, type: 'daily' },
-    { pattern: /每日/, type: 'daily' },
-    { pattern: /每月/, type: 'monthly' }
+  // 2. 解析時間範圍
+  const timeRangePatterns = [
+    /(下午|上午|中午|晚上|早上)([一二三四五六七八九十\d]+)點([一二三四五六七八九十\d]+)?分?[至到]([一二三四五六七八九十\d]+)點([一二三四五六七八九十\d]+)?分?/,
+    /([一二三四五六七八九十\d]+)點([一二三四五六七八九十\d]+)?分?[至到]([一二三四五六七八九十\d]+)點([一二三四五六七八九十\d]+)?分?/,
+    /(下午|上午|中午|晚上|早上)([一二三四五六七八九十\d]+)[點時]/
   ];
   
-  for (const {pattern, type} of recurringPatterns) {
-    if (pattern.test(text)) {
-      result.recurring = { type, pattern: text.match(pattern)[0] };
-      result.confidence += 0.2;
-      break;
-    }
-  }
-  
-  // 場地匹配邏輯保持不變
-  const venues = [
-    { id: '101', name: '101號室', aliases: ['101', '101室', '101號'] },
-    { id: '102', name: '102號室', aliases: ['102', '102室', '102號'] },
-    { id: '103', name: '103號室', aliases: ['103', '103室', '103號'] },
-    { id: '201', name: '201號室', aliases: ['201', '201室', '201號'] },
-    { id: '202', name: '202號室', aliases: ['202', '202室', '202號'] },
-    { id: '203', name: '203號室', aliases: ['203', '203室', '203號'] },
-    { id: '301', name: '301號室', aliases: ['301', '301室', '301號'] },
-    { id: '302', name: '302號室', aliases: ['302', '302室', '302號'] },
-    { id: '303', name: '303號室', aliases: ['303', '303室', '303號'] },
-    { id: 'music', name: '音樂室', aliases: ['音樂室', '音樂', '琴房'] },
-    { id: 'art', name: '美術室', aliases: ['美術室', '美術', '畫室'] },
-    { id: 'computer', name: '電腦室', aliases: ['電腦室', '電腦', '機房'] },
-    { id: 'language', name: '語言實驗室', aliases: ['語言室', '語言實驗室', '語音室'] },
-    { id: 'science', name: '科學實驗室', aliases: ['實驗室', '科學室', '化學室', '物理室'] },
-    { id: 'library', name: '圖書館', aliases: ['圖書館', '圖書室', '閱覽室'] },
-    { id: 'gym', name: '體育館', aliases: ['體育館', '運動場', '籃球場'] },
-    { id: 'auditorium', name: '禮堂', aliases: ['禮堂', '大禮堂', '演講廳'] },
-    { id: 'meeting', name: '會議室', aliases: ['會議室', '會議廳', '討論室'] },
-    { id: 'cafeteria', name: '多功能室', aliases: ['多功能室', '活動室', '餐廳'] },
-    { id: 'roof', name: '天台', aliases: ['天台', '屋頂', '頂樓'] },
-    { id: 'playground', name: '操場', aliases: ['操場', '運動場', '田徑場'] }
-  ];
-  
-  for (const venue of venues) {
-    for (const alias of venue.aliases) {
-      if (text.includes(alias)) {
-        result.venue = venue;
-        result.confidence += 0.3;
-        break;
-      }
-    }
-    if (result.venue) break;
-  }
-  
-  // 時間提取 - 支持多種格式
-  const timePatterns = [
-    /(\d{1,2})[點時:](\d{1,2})/,                    // 14:30, 2點30
-    /(\d{1,2})[點時]/,                              // 14點, 2時
-    /(上午|早上|AM|am)\s*(\d{1,2})[點時:]?(\d{1,2})?/, // 上午10點
-    /(下午|PM|pm)\s*(\d{1,2})[點時:]?(\d{1,2})?/,   // 下午2點
-    /(晚上|傍晚|夜晚)\s*(\d{1,2})[點時:]?(\d{1,2})?/, // 晚上7點
-    /(中午|noon)\s*(\d{1,2})?[點時:]?(\d{1,2})?/    // 中午12點
-  ];
-  
-  for (const pattern of timePatterns) {
+  for (const pattern of timeRangePatterns) {
     const match = text.match(pattern);
     if (match) {
-      let hour, minute = 0;
-      
-      if (match[0].includes('上午') || match[0].includes('早上') || match[0].includes('AM') || match[0].includes('am')) {
-        hour = parseInt(match[2]);
-        minute = match[3] ? parseInt(match[3]) : 0;
-      } else if (match[0].includes('下午') || match[0].includes('PM') || match[0].includes('pm')) {
-        hour = parseInt(match[2]);
-        if (hour !== 12) hour += 12;
-        minute = match[3] ? parseInt(match[3]) : 0;
-      } else if (match[0].includes('晚上') || match[0].includes('傍晚') || match[0].includes('夜晚')) {
-        hour = parseInt(match[2]);
-        if (hour < 12) hour += 12;
-        minute = match[3] ? parseInt(match[3]) : 0;
-      } else if (match[0].includes('中午') || match[0].includes('noon')) {
-        hour = match[2] ? parseInt(match[2]) : 12;
-        minute = match[3] ? parseInt(match[3]) : 0;
-      } else {
-        // 直接時間格式
-        hour = parseInt(match[1]);
-        minute = match[2] ? parseInt(match[2]) : 0;
+      try {
+        let startHour = 0;
+        let startMinute = 0;
+        let endHour = 0;
+        let endMinute = 0;
         
-        // 智能判斷上下午
-        if (hour < 8) hour += 12; // 7點以前視為下午/晚上
-      }
-      
-      if (dateBase && dateBase.isValid()) {
-        result.startTime = dateBase.clone().hour(hour).minute(minute).second(0).toISOString();
-        result.confidence += 0.3;
-        
-        // 智能時長判斷
-        let duration = 2; // 默認2小時
-        const durationMatch = text.match(/(\d+)\s*[個]?小時/);
-        if (durationMatch) {
-          duration = parseInt(durationMatch[1]);
-          result.confidence += 0.1;
-        } else if (text.includes('整天') || text.includes('全天')) {
-          duration = 8;
-        } else if (text.includes('半天')) {
-          duration = 4;
+        if (match[0].includes('至') || match[0].includes('到')) {
+          // 時間範圍
+          const period = match[1];
+          startHour = chineseNumberToInt(match[2]);
+          startMinute = match[3] ? chineseNumberToInt(match[3]) : 0;
+          endHour = chineseNumberToInt(match[4]);
+          endMinute = match[5] ? chineseNumberToInt(match[5]) : 0;
+          
+          if (period && (period.includes('下午') || period.includes('晚上')) && startHour < 12) {
+            startHour += 12;
+          }
+          if (period && (period.includes('下午') || period.includes('晚上')) && endHour < 12) {
+            endHour += 12;
+          }
+        } else {
+          // 單一時間
+          const period = match[1];
+          startHour = chineseNumberToInt(match[2]);
+          startMinute = match[3] ? chineseNumberToInt(match[3]) : 0;
+          
+          if (period && (period.includes('下午') || period.includes('晚上')) && startHour < 12) {
+            startHour += 12;
+          }
+          
+          // 默認2小時
+          endHour = startHour + 2;
+          endMinute = startMinute;
         }
         
-        result.endTime = moment(result.startTime).add(duration, 'hours').toISOString();
+        startTime = dateBase.clone().hour(startHour).minute(startMinute).second(0).toISOString();
+        endTime = dateBase.clone().hour(endHour).minute(endMinute).second(0).toISOString();
+        
+        console.log('⏰ 解析到時間範圍:', {
+          start: moment(startTime).format('YYYY-MM-DD HH:mm'),
+          end: moment(endTime).format('YYYY-MM-DD HH:mm')
+        });
         break;
+        
+      } catch (e) {
+        console.log('⚠️ 時間解析失敗:', e.message);
       }
     }
   }
   
-  // 如果沒有匹配到具體時間，但有時間基準，設置默認時間
-  if (!result.startTime && timeMatched && dateBase.isValid()) {
-    result.startTime = dateBase.clone().hour(14).minute(0).second(0).toISOString(); // 默認下午2點
-    result.endTime = dateBase.clone().hour(16).minute(0).second(0).toISOString();   // 默認到4點
-    result.confidence += 0.1;
-  }
-  
-  // 用途提取
+  return { startTime, endTime };
+};
+
+// 從文本中提取用途
+const extractPurposeFromText = (text) => {
   const purposeKeywords = {
     '會議': ['會議', '開會', '討論', '商議'],
     '上課': ['上課', '教學', '培訓', '講座', '課程'],
@@ -413,72 +379,200 @@ const fallbackProcessing = async (text) => {
   for (const [purpose, keywords] of Object.entries(purposeKeywords)) {
     for (const keyword of keywords) {
       if (text.includes(keyword)) {
-        result.purpose = purpose;
-        result.confidence += 0.2;
-        break;
+        console.log('🎯 匹配到用途:', purpose);
+        return purpose;
       }
     }
-    if (result.purpose) break;
   }
   
-  if (!result.purpose) {
-    result.purpose = '場地使用';
-  }
+  return '場地使用';
+};
+
+// 中文數字轉換
+const chineseNumberToInt = (str) => {
+  const chineseToNumber = {
+    '一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
+    '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
+    '十一': 11, '十二': 12
+  };
   
+  return chineseToNumber[str] || parseInt(str) || 0;
+};
+
+// 增強的後備處理邏輯
+const enhancedFallbackProcessing = async (text) => {
+  console.log('🔧 使用增強後備處理邏輯');
+  
+  const venue = extractVenueFromText(text);
+  const timeResult = extractTimeFromText(text);
+  const purpose = extractPurposeFromText(text);
+  
+  const result = {
+    venue: venue,
+    startTime: timeResult.startTime,
+    endTime: timeResult.endTime,
+    purpose: purpose,
+    confidence: venue && timeResult.startTime ? 0.7 : 0.3,
+    aiProvider: 'Fallback',
+    debug: {
+      venueFound: !!venue,
+      timeFound: !!timeResult.startTime,
+      originalText: text
+    }
+  };
+  
+  console.log('🔧 後備處理結果:', result);
   return result;
 };
 
-// POST /api/ai/parse - 解析自然語言預訂請求
-router.post('/parse', async (req, res) => {
+// POST /api/ai - 處理自然語言預訂請求 - 增強版本
+router.post('/', async (req, res) => {
   try {
     const { text } = req.body;
     
-    if (!text) {
-      return res.status(400).json({ error: '請提供要解析的文本' });
+    if (!text || text.trim().length === 0) {
+      return res.status(400).json({ 
+        error: '請提供預訂描述文本',
+        success: false
+      });
     }
     
-    console.log('處理用戶輸入:', text);
+    console.log('🚀 收到AI處理請求:', { text, timestamp: new Date().toISOString() });
     
-    // 使用DeepSeek AI處理
+    // 使用增強的AI處理
     const parsed = await processNaturalLanguageWithAI(text);
     
-    // 構建回應
-    const response = {
-      originalText: text,
-      parsed: parsed,
-      suggestions: [],
-      canProceed: parsed.venue && parsed.startTime && parsed.confidence > 0.5,
-      aiProvider: 'DeepSeek'
-    };
+    console.log('🎯 AI處理完成:', {
+      venue: parsed.venue?.name || 'none',
+      confidence: parsed.confidence,
+      aiProvider: parsed.aiProvider || 'unknown',
+      hasTime: !!parsed.startTime
+    });
     
-    // 如果解析成功，提供建議
-    if (response.canProceed) {
-      response.suggestions.push({
+    // 構建詳細回應
+    const response = {
+      success: true,
+      originalText: text,
+      parsed: {
         venue: parsed.venue,
         startTime: parsed.startTime,
         endTime: parsed.endTime,
         purpose: parsed.purpose,
-        formattedTime: `${moment(parsed.startTime).format('YYYY-MM-DD HH:mm')} - ${moment(parsed.endTime).format('HH:mm')}`
-      });
+        confidence: parsed.confidence,
+        recurring: parsed.recurring,
+        aiProvider: parsed.aiProvider
+      },
+      suggestions: [],
+      canProceed: false,
+      debug: parsed.debug || {}
+    };
+    
+    // 判斷是否可以繼續預訂
+    if (parsed.venue && parsed.startTime && parsed.confidence > 0.3) {
+      response.canProceed = true;
+      
+      // 格式化時間顯示
+      const startMoment = moment(parsed.startTime);
+      const endMoment = moment(parsed.endTime);
+      
+      const suggestion = {
+        venue: parsed.venue,
+        startTime: parsed.startTime,
+        endTime: parsed.endTime,
+        purpose: parsed.purpose,
+        formattedTime: `${startMoment.format('YYYY年MM月DD日 HH:mm')} - ${endMoment.format('HH:mm')}`,
+        formattedDate: startMoment.format('YYYY-MM-DD'),
+        formattedStartTime: startMoment.format('HH:mm'),
+        formattedEndTime: endMoment.format('HH:mm'),
+        duration: endMoment.diff(startMoment, 'hours', true),
+        recurring: parsed.recurring
+      };
+      
+      response.suggestions.push(suggestion);
+      
+      // 檢查時間衝突
+      const existingBookings = readBookings();
+      const hasConflict = hasTimeConflict({
+        venueId: parsed.venue.id,
+        startTime: parsed.startTime,
+        endTime: parsed.endTime
+      }, existingBookings);
+      
+      if (hasConflict) {
+        response.warning = '該時段可能已被預訂，請確認是否繼續';
+        response.hasConflict = true;
+      }
+      
+      console.log('✅ 預訂建議生成成功:', suggestion);
+      
     } else {
-      // 如果解析失敗，提供幫助信息
+      // 處理解析失敗的情況
+      response.canProceed = false;
       response.error = '無法完全理解您的預訂需求';
-      response.help = {
+      
+      // 提供智能幫助信息
+      const helpInfo = {
         message: '請確保包含以下信息：',
-        required: ['場地名稱', '時間', '用途'],
+        required: [],
         examples: [
-          '我想在明天下午2點借101號室開會',
-          '下週三上午10點使用音樂室練習',
-          '這週五晚上7點在禮堂舉辦活動'
+          '我想預訂音樂室，明天下午2點到4點，用於練習',
+          '2025年6月30日上午10點借101號室開會',
+          '下週三晚上7點在禮堂舉辦活動，需要2小時'
         ]
       };
+      
+      // 分析缺少的信息
+      if (!parsed.venue) {
+        helpInfo.required.push('場地名稱（如：音樂室、101號室、禮堂等）');
+      }
+      
+      if (!parsed.startTime) {
+        helpInfo.required.push('時間（如：明天下午2點、2025年6月30日上午10點）');
+      }
+      
+      if (parsed.confidence < 0.3) {
+        helpInfo.required.push('更清楚的表達方式');
+      }
+      
+      response.help = helpInfo;
+      
+      console.log('⚠️ 預訂解析不完整:', {
+        hasVenue: !!parsed.venue,
+        hasTime: !!parsed.startTime,
+        confidence: parsed.confidence
+      });
     }
     
-    console.log('解析結果:', response);
+    // 添加處理統計
+    response.processingStats = {
+      timestamp: new Date().toISOString(),
+      processingTime: Date.now() - new Date(response.debug.timestamp || Date.now()).getTime(),
+      aiProvider: parsed.aiProvider || 'Unknown',
+      confidence: parsed.confidence,
+      fallbackUsed: parsed.aiProvider === 'Fallback'
+    };
+    
+    console.log('📤 返回AI處理結果:', {
+      canProceed: response.canProceed,
+      hasConflict: response.hasConflict,
+      suggestions: response.suggestions.length
+    });
+    
     res.json(response);
+    
   } catch (error) {
-    console.error('AI解析錯誤:', error);
-    res.status(500).json({ error: 'AI解析失敗' });
+    console.error('❌ AI處理發生錯誤:', {
+      error: error.message,
+      stack: error.stack,
+      input: req.body
+    });
+    
+    res.status(500).json({ 
+      success: false,
+      error: '處理您的請求時遇到了問題，請稍後再試',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
