@@ -342,39 +342,40 @@ ${venueList}
         }
       }
       
-      // 🔧 優先使用本地時間解析，避免AI的時間解析錯誤
+      // 🔧 開始智能時間處理...
       console.log('🔧 開始智能時間處理...');
       let startTime = null;
       let endTime = null;
-      
-      // 1. 優先使用本地時間解析
-      const localTimeResult = extractTimeFromText(text);
-      if (localTimeResult.startTime && localTimeResult.endTime) {
-        console.log('✅ 本地時間解析成功，使用本地結果');
-        startTime = localTimeResult.startTime;
-        endTime = localTimeResult.endTime;
-      } else if (parsed.startTime && parsed.endTime) {
-        // 2. 如果本地解析失敗，使用AI結果但進行驗證
-        console.log('🤖 使用AI時間解析結果');
-        const aiStartMoment = moment(parsed.startTime);
-        const aiEndMoment = moment(parsed.endTime);
-        
-        if (aiStartMoment.isValid() && aiEndMoment.isValid()) {
-          startTime = aiStartMoment.format('YYYY-MM-DDTHH:mm:ss');
-          endTime = aiEndMoment.format('YYYY-MM-DDTHH:mm:ss');
-          console.log('✅ AI時間解析有效:', { startTime, endTime });
+
+      // 1. 先嘗試使用 AI 回傳時間
+      if (parsed.startTime && parsed.endTime) {
+        const aiStart = moment(parsed.startTime);
+        const aiEnd   = moment(parsed.endTime);
+        if (aiStart.isValid() && aiEnd.isValid()) {
+          startTime = aiStart.format('YYYY-MM-DDTHH:mm:ss');
+          endTime   = aiEnd.format('YYYY-MM-DDTHH:mm:ss');
+          console.log('✅ 使用 AI 時間:', { startTime, endTime });
         } else {
-          console.log('⚠️ AI時間解析無效，使用默認邏輯');
-          // 使用默認的2小時預訂
-          const now = moment().utcOffset('+08:00'); // 香港時區
-          startTime = now.format('YYYY-MM-DDTHH:mm:ss');
-          endTime = now.add(2, 'hours').format('YYYY-MM-DDTHH:mm:ss');
+          console.log('⚠️ AI 時間無效，嘗試本地解析');
         }
-      } else {
-        console.log('⚠️ 所有時間解析都失敗，使用默認時間');
-        const now = moment().utcOffset('+08:00'); // 香港時區
+      }
+
+      // 2. 若 AI 時間缺失或無效，使用本地正則解析
+      if (!startTime) {
+        const localTimeResult = extractTimeFromText(text);
+        if (localTimeResult.startTime && localTimeResult.endTime) {
+          startTime = localTimeResult.startTime;
+          endTime   = localTimeResult.endTime;
+          console.log('✅ 本地時間解析成功 (fallback)');
+        }
+      }
+
+      // 3. 若仍失敗，使用當前時間 +2 小時作為預設
+      if (!startTime) {
+        console.log('⚠️ 全部時間解析失敗，使用預設 2 小時');
+        const now = moment().utcOffset('+08:00');
         startTime = now.format('YYYY-MM-DDTHH:mm:ss');
-        endTime = now.add(2, 'hours').format('YYYY-MM-DDTHH:mm:ss');
+        endTime   = now.add(2, 'hours').format('YYYY-MM-DDTHH:mm:ss');
       }
       
       const result = {
