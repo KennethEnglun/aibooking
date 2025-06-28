@@ -35,10 +35,21 @@ if (isProduction) {
   console.log(`📁 靜態文件存在: ${fs.existsSync(buildPath)}`);
 }
 
-// 健康檢查端點
+// 簡單的健康檢查端點（Railway專用）
 app.get('/health', (req, res) => {
+  console.log('📋 收到健康檢查請求');
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: Math.round(process.uptime()),
+    port: PORT
+  });
+});
+
+// 詳細的健康檢查端點
+app.get('/health-detailed', (req, res) => {
   try {
-    console.log('📋 收到健康檢查請求');
+    console.log('📋 收到詳細健康檢查請求');
     
     // 檢查存儲系統
     let storageHealth = null;
@@ -64,10 +75,10 @@ app.get('/health', (req, res) => {
       }
     };
     
-    console.log('✅ 健康檢查通過:', healthData.status);
+    console.log('✅ 詳細健康檢查通過:', healthData.status);
     res.status(200).json(healthData);
   } catch (error) {
-    console.error('❌ 健康檢查失敗:', error);
+    console.error('❌ 詳細健康檢查失敗:', error);
     res.status(503).json({
       status: 'unhealthy',
       timestamp: new Date().toISOString(),
@@ -181,9 +192,15 @@ process.on('SIGINT', () => {
 console.log('🔧 啟動前檢查...');
 console.log(`📍 PORT環境變量: ${process.env.PORT}`);
 console.log(`📍 實際監聽端口: ${PORT}`);
-console.log(`🌐 NODE_ENV: ${process.env.NODE_ENV}`);
+console.log(`🌐 NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
 console.log(`📂 當前工作目錄: ${process.cwd()}`);
 console.log(`📂 __dirname: ${__dirname}`);
+
+// 確保在生產環境中設置NODE_ENV
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = 'production';
+  console.log('🔧 設置NODE_ENV為production');
+}
 
 // 檢查路由文件是否存在
 const routeFiles = ['./routes/bookings', './routes/admin', './routes/ai'];
