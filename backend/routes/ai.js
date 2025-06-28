@@ -95,7 +95,7 @@ const createRecurringBookings = async (bookingData, recurringInfo) => {
   return bookings;
 };
 
-// 使用DeepSeek API處理自然語言 - 增強版本
+// 使用DeepSeek API處理自然語言 - 超級穩定版本
 const processNaturalLanguageWithAI = async (text) => {
   console.log('🤖 開始處理用戶輸入:', text);
   
@@ -149,20 +149,27 @@ ${venueList}
 
 請分析用戶輸入並返回JSON結果：`;
 
-  // 增強的重試機制
+  // 超級增強的重試機制
   let lastError = null;
   let response = null;
-  const maxRetries = 3;
+  const maxRetries = 10; // 增加到10次重試
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`📡 調用DeepSeek API... (嘗試 ${attempt}/${maxRetries})`);
       
+      // 創建可取消的請求
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 增加到30秒超時
+      const timeoutId = setTimeout(() => {
+        console.log(`⏰ 請求超時，取消第${attempt}次嘗試`);
+        controller.abort();
+      }, 60000); // 增加到60秒超時
+      
+      const apiUrl = process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions';
+      console.log(`🎯 請求URL: ${apiUrl}`);
       
       response = await axios.post(
-        process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions',
+        apiUrl,
         {
           model: "deepseek-chat",
           messages: [
@@ -182,37 +189,74 @@ ${venueList}
         {
           headers: {
             'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'AIBooking/1.0'
           },
-          timeout: 30000,
-          signal: controller.signal
+          timeout: 60000, // 60秒超時
+          signal: controller.signal,
+          validateStatus: function (status) {
+            return status >= 200 && status < 300; // 只接受2xx狀態碼
+          }
         }
       );
       
       clearTimeout(timeoutId);
-      console.log('✅ DeepSeek API調用成功');
+      console.log(`✅ DeepSeek API調用成功 (第${attempt}次嘗試)`);
+      console.log(`📊 響應狀態: ${response.status}, 數據大小: ${JSON.stringify(response.data).length} 字符`);
       break; // 成功則跳出重試循環
       
     } catch (apiError) {
       lastError = apiError;
-      console.log(`❌ DeepSeek API調用失敗 (嘗試 ${attempt}/${maxRetries}):`, apiError.message);
+      const errorMsg = apiError.code === 'ECONNABORTED' ? '請求超時' : 
+                      apiError.response?.status ? `HTTP ${apiError.response.status}` : 
+                      apiError.message;
+      
+      console.log(`❌ DeepSeek API調用失敗 (第${attempt}/${maxRetries}次): ${errorMsg}`);
+      
+      // 詳細錯誤信息
+      if (apiError.response) {
+        console.log(`📊 錯誤詳情: 狀態碼 ${apiError.response.status}, 數據:`, apiError.response.data);
+      } else if (apiError.request) {
+        console.log(`🌐 網絡錯誤: 無法連接到服務器`);
+      } else {
+        console.log(`⚙️ 請求配置錯誤: ${apiError.message}`);
+      }
       
       if (attempt < maxRetries) {
-        // 指數退避算法：1秒、2秒、4秒，最大5秒
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-        console.log(`⏳ 等待 ${delay}ms 後重試...`);
+        // 漸進式退避算法：指數增長 + 隨機抖動
+        const baseDelay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // 最大10秒
+        const jitter = Math.random() * 1000; // 隨機抖動0-1秒
+        const delay = baseDelay + jitter;
+        
+        console.log(`⏳ 等待 ${Math.round(delay)}ms 後重試... (指數退避 + 抖動)`);
         await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        console.error(`💥 所有 ${maxRetries} 次重試都失敗，錯誤詳情:`, {
+          lastErrorMessage: lastError?.message,
+          lastErrorCode: lastError?.code,
+          lastHttpStatus: lastError?.response?.status,
+          apiKey: process.env.DEEPSEEK_API_KEY ? '已配置' : '未配置',
+          apiUrl: process.env.DEEPSEEK_API_URL || '使用默認URL'
+        });
       }
     }
   }
   
   if (!response) {
-    console.error('❌ DeepSeek API 所有重試都失敗:', lastError?.message);
-    console.log('🔄 使用後備處理邏輯');
+    console.error('❌ DeepSeek API 徹底失敗:', lastError?.message);
+    console.log('🔄 切換到後備處理邏輯');
     return await enhancedFallbackProcessing(text);
   }
   
   try {
+    // 驗證響應數據
+    if (!response.data || !response.data.choices || !response.data.choices[0]) {
+      console.error('❌ API響應格式異常:', response.data);
+      console.log('🔄 使用後備處理邏輯');
+      return await enhancedFallbackProcessing(text);
+    }
+    
     const aiResponse = response.data.choices[0].message.content.trim();
     console.log('🤖 DeepSeek 原始回應:', aiResponse);
     
