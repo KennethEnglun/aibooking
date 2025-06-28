@@ -33,7 +33,7 @@ const processNaturalLanguageWithAI = async (text) => {
 
   try {
     const response = await axios.post(
-      process.env.DEEPSEEK_API_URL,
+      process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions',
       {
         model: "deepseek-chat",
         messages: [
@@ -270,7 +270,7 @@ router.get('/status', async (req, res) => {
   try {
     // 測試DeepSeek API連接
     const testResponse = await axios.post(
-      process.env.DEEPSEEK_API_URL,
+      process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions',
       {
         model: "deepseek-chat",
         messages: [
@@ -296,12 +296,15 @@ router.get('/status', async (req, res) => {
       model: 'deepseek-chat'
     });
   } catch (error) {
+    console.error('DeepSeek API測試失敗:', error.message);
     res.json({
       status: 'degraded',
       provider: 'DeepSeek (Fallback)',
       apiConnected: false,
       error: error.message,
-      fallbackAvailable: true
+      fallbackAvailable: true,
+      endpoint: process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions',
+      hasApiKey: !!process.env.DEEPSEEK_API_KEY
     });
   }
 });
