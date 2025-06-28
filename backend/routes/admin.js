@@ -4,15 +4,49 @@ const path = require('path');
 const moment = require('moment');
 const { getAllVenues } = require('../config/venues');
 
+// 確保環境變量被正確加載
+require('dotenv').config();
+
 const router = express.Router();
 const bookingsFile = path.join(__dirname, '../data/bookings.json');
+
+// 環境變量診斷端點（僅開發環境或特殊查詢參數）
+router.get('/env-check', (req, res) => {
+  // 僅在特定條件下暴露診斷信息
+  if (req.query.debug === 'true' || process.env.NODE_ENV === 'development') {
+    res.json({
+      hasAdminPassword: !!process.env.ADMIN_PASSWORD,
+      hasDeepSeekKey: !!process.env.DEEPSEEK_API_KEY,
+      nodeEnv: process.env.NODE_ENV,
+      port: process.env.PORT,
+      adminPasswordLength: process.env.ADMIN_PASSWORD ? process.env.ADMIN_PASSWORD.length : 0,
+      timestamp: new Date().toISOString()
+    });
+  } else {
+    res.status(403).json({ error: 'Unauthorized' });
+  }
+});
 
 // 簡單的管理員認證中間件
 const authMiddleware = (req, res, next) => {
   const { password } = req.body || req.query;
+  console.log('🔐 管理員認證嘗試:', {
+    providedPassword: password ? `***${password.slice(-2)}` : '(無)',
+    expectedPassword: process.env.ADMIN_PASSWORD ? `***${process.env.ADMIN_PASSWORD.slice(-2)}` : '(未配置)',
+    hasAdminPassword: !!process.env.ADMIN_PASSWORD
+  });
+  
+  if (!process.env.ADMIN_PASSWORD) {
+    console.error('❌ ADMIN_PASSWORD 環境變量未配置');
+    return res.status(500).json({ error: '服務器配置錯誤：管理員密碼未設置' });
+  }
+  
   if (password !== process.env.ADMIN_PASSWORD) {
+    console.log('❌ 管理員密碼錯誤');
     return res.status(401).json({ error: '管理員密碼錯誤' });
   }
+  
+  console.log('✅ 管理員認證成功');
   next();
 };
 
