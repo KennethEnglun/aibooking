@@ -1,200 +1,268 @@
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
+const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const moment = require('moment');
-const { getAllVenues, getVenueById } = require('../config/venues');
+const storage = require('../data/storage');
+const venues = require('../config/venues');
 
-const router = express.Router();
-const bookingsFile = path.join(__dirname, '../data/bookings.json');
-
-// 讀取預訂數據
-const readBookings = () => {
-  try {
-    const data = fs.readFileSync(bookingsFile, 'utf8');
-    return JSON.parse(data);
-  } catch (error) {
-    return [];
-  }
-};
-
-// 寫入預訂數據
-const writeBookings = (bookings) => {
-  fs.writeFileSync(bookingsFile, JSON.stringify(bookings, null, 2));
-};
-
-// 檢查時間衝突
-const checkConflict = (venueId, startTime, endTime, excludeId = null) => {
-  const bookings = readBookings();
-  return bookings.some(booking => {
-    if (booking.id === excludeId) return false;
-    if (booking.venueId !== venueId) return false;
-    if (booking.status === 'cancelled') return false;
-    
-    const bookingStart = moment(booking.startTime);
-    const bookingEnd = moment(booking.endTime);
-    const newStart = moment(startTime);
-    const newEnd = moment(endTime);
-    
-    // 檢查時間重疊
-    return newStart.isBefore(bookingEnd) && newEnd.isAfter(bookingStart);
-  });
-};
-
-// GET /api/bookings - 獲取所有預訂
+// 獲取所有預訂
 router.get('/', (req, res) => {
   try {
-    const bookings = readBookings();
-    res.json(bookings);
+    const bookings = storage.loadBookings();
+    res.json({
+      success: true,
+      data: bookings,
+      count: bookings.length,
+      storageInfo: storage.getStorageInfo()
+    });
   } catch (error) {
-    res.status(500).json({ error: '無法讀取預訂數據' });
+    console.error('❌ 獲取預訂失敗:', error);
+    res.status(500).json({
+      success: false,
+      error: '獲取預訂失敗',
+      message: error.message
+    });
   }
 });
 
-// GET /api/bookings/venues - 獲取所有場地
-router.get('/venues', (req, res) => {
+// 根據日期獲取預訂
+router.get('/date/:date', (req, res) => {
   try {
-    const venues = getAllVenues();
-    res.json(venues);
+    const { date } = req.params;
+    const bookings = storage.loadBookings();
+    
+    const filteredBookings = bookings.filter(booking => 
+      moment(booking.date).format('YYYY-MM-DD') === date
+    );
+    
+    res.json({
+      success: true,
+      data: filteredBookings,
+      date: date,
+      count: filteredBookings.length
+    });
   } catch (error) {
-    res.status(500).json({ error: '無法讀取場地數據' });
+    console.error('❌ 根據日期獲取預訂失敗:', error);
+    res.status(500).json({
+      success: false,
+      error: '獲取預訂失敗',
+      message: error.message
+    });
   }
 });
 
-// GET /api/bookings/:id - 獲取特定預訂
-router.get('/:id', (req, res) => {
-  try {
-    const bookings = readBookings();
-    const booking = bookings.find(b => b.id === req.params.id);
-    if (!booking) {
-      return res.status(404).json({ error: '預訂不存在' });
+// 檢查時間衝突
+function checkTimeConflict(newBooking, existingBookings) {
+  const newStart = moment(`${newBooking.date} ${newBooking.startTime}`);
+  const newEnd = moment(`${newBooking.date} ${newBooking.endTime}`);
+  
+  return existingBookings.some(booking => {
+    if (booking.venue !== newBooking.venue || 
+        moment(booking.date).format('YYYY-MM-DD') !== newBooking.date) {
+      return false;
     }
-    res.json(booking);
-  } catch (error) {
-    res.status(500).json({ error: '無法讀取預訂數據' });
-  }
-});
+    
+    const existingStart = moment(`${booking.date} ${booking.startTime}`);
+    const existingEnd = moment(`${booking.date} ${booking.endTime}`);
+    
+    return newStart.isBefore(existingEnd) && newEnd.isAfter(existingStart);
+  });
+}
 
-// POST /api/bookings - 創建新預訂
+// 創建新預訂
 router.post('/', (req, res) => {
   try {
-    const { venueId, startTime, endTime, purpose, contactInfo } = req.body;
+    const { venue, date, startTime, endTime, purpose, bookerName, bookerContact } = req.body;
     
-    // 驗證必要字段
-    if (!venueId || !startTime || !endTime || !purpose || !contactInfo) {
-      return res.status(400).json({ error: '缺少必要字段' });
-    }
-    
-    // 驗證場地存在
-    const venue = getVenueById(venueId);
-    if (!venue) {
-      return res.status(400).json({ error: '場地不存在' });
-    }
-    
-    // 驗證時間
-    const start = moment(startTime);
-    const end = moment(endTime);
-    if (!start.isValid() || !end.isValid()) {
-      return res.status(400).json({ error: '時間格式無效' });
-    }
-    if (start.isSameOrAfter(end)) {
-      return res.status(400).json({ error: '結束時間必須晚於開始時間' });
-    }
-    
-    // 檢查衝突
-    if (checkConflict(venueId, startTime, endTime)) {
-      return res.status(409).json({ 
-        error: '該時段已被預訂',
-        conflict: true 
+    // 驗證必填字段
+    if (!venue || !date || !startTime || !endTime || !purpose || !bookerName) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必填字段',
+        required: ['venue', 'date', 'startTime', 'endTime', 'purpose', 'bookerName']
       });
     }
     
-    // 創建預訂
-    const booking = {
+    // 驗證場地是否存在
+    const venueExists = venues.some(v => v.id === venue);
+    if (!venueExists) {
+      return res.status(400).json({
+        success: false,
+        error: '場地不存在',
+        venue: venue
+      });
+    }
+    
+    // 驗證時間格式
+    if (!moment(date, 'YYYY-MM-DD').isValid()) {
+      return res.status(400).json({
+        success: false,
+        error: '日期格式錯誤，應為 YYYY-MM-DD'
+      });
+    }
+    
+    // 驗證時間邏輯
+    const start = moment(`${date} ${startTime}`);
+    const end = moment(`${date} ${endTime}`);
+    
+    if (end.isSameOrBefore(start)) {
+      return res.status(400).json({
+        success: false,
+        error: '結束時間必須晚於開始時間'
+      });
+    }
+    
+    const existingBookings = storage.loadBookings();
+    
+    // 檢查時間衝突
+    if (checkTimeConflict({ venue, date, startTime, endTime }, existingBookings)) {
+      return res.status(409).json({
+        success: false,
+        error: '該時間段已被預訂',
+        conflictDetails: {
+          venue,
+          date,
+          timeRange: `${startTime} - ${endTime}`
+        }
+      });
+    }
+    
+    // 創建新預訂
+    const newBooking = {
       id: uuidv4(),
-      venueId,
-      venueName: venue.name,
+      venue,
+      date,
       startTime,
       endTime,
       purpose,
-      contactInfo,
+      bookerName,
+      bookerContact: bookerContact || '',
       status: 'confirmed',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
     
-    const bookings = readBookings();
-    bookings.push(booking);
-    writeBookings(bookings);
+    const success = storage.addBooking(newBooking);
     
-    res.status(201).json(booking);
+    if (success) {
+      res.status(201).json({
+        success: true,
+        data: newBooking,
+        message: '預訂成功'
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: '保存預訂失敗'
+      });
+    }
+    
   } catch (error) {
-    res.status(500).json({ error: '創建預訂失敗' });
+    console.error('❌ 創建預訂失敗:', error);
+    res.status(500).json({
+      success: false,
+      error: '創建預訂失敗',
+      message: error.message
+    });
   }
 });
 
-// PUT /api/bookings/:id - 更新預訂
+// 更新預訂
 router.put('/:id', (req, res) => {
   try {
-    const { venueId, startTime, endTime, purpose, contactInfo, status } = req.body;
-    const bookings = readBookings();
-    const bookingIndex = bookings.findIndex(b => b.id === req.params.id);
+    const { id } = req.params;
+    const updateData = req.body;
     
-    if (bookingIndex === -1) {
-      return res.status(404).json({ error: '預訂不存在' });
-    }
+    // 添加更新時間
+    updateData.updatedAt = new Date().toISOString();
     
-    // 如果更新時間或場地，檢查衝突
-    if (venueId && (startTime || endTime)) {
-      const newVenueId = venueId || bookings[bookingIndex].venueId;
-      const newStartTime = startTime || bookings[bookingIndex].startTime;
-      const newEndTime = endTime || bookings[bookingIndex].endTime;
+    const success = storage.updateBooking(id, updateData);
+    
+    if (success) {
+      const bookings = storage.loadBookings();
+      const updatedBooking = bookings.find(booking => booking.id === id);
       
-      if (checkConflict(newVenueId, newStartTime, newEndTime, req.params.id)) {
-        return res.status(409).json({ 
-          error: '該時段已被預訂',
-          conflict: true 
-        });
-      }
+      res.json({
+        success: true,
+        data: updatedBooking,
+        message: '預訂更新成功'
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: '預訂不存在'
+      });
     }
-    
-    // 更新預訂
-    const updatedBooking = {
-      ...bookings[bookingIndex],
-      ...(venueId && { venueId, venueName: getVenueById(venueId)?.name }),
-      ...(startTime && { startTime }),
-      ...(endTime && { endTime }),
-      ...(purpose && { purpose }),
-      ...(contactInfo && { contactInfo }),
-      ...(status && { status }),
-      updatedAt: new Date().toISOString()
-    };
-    
-    bookings[bookingIndex] = updatedBooking;
-    writeBookings(bookings);
-    
-    res.json(updatedBooking);
   } catch (error) {
-    res.status(500).json({ error: '更新預訂失敗' });
+    console.error('❌ 更新預訂失敗:', error);
+    res.status(500).json({
+      success: false,
+      error: '更新預訂失敗',
+      message: error.message
+    });
   }
 });
 
-// DELETE /api/bookings/:id - 刪除預訂
+// 刪除預訂
 router.delete('/:id', (req, res) => {
   try {
-    const bookings = readBookings();
-    const bookingIndex = bookings.findIndex(b => b.id === req.params.id);
+    const { id } = req.params;
     
-    if (bookingIndex === -1) {
-      return res.status(404).json({ error: '預訂不存在' });
+    const success = storage.deleteBooking(id);
+    
+    if (success) {
+      res.json({
+        success: true,
+        message: '預訂刪除成功'
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: '預訂不存在'
+      });
     }
-    
-    bookings.splice(bookingIndex, 1);
-    writeBookings(bookings);
-    
-    res.json({ message: '預訂已刪除' });
   } catch (error) {
-    res.status(500).json({ error: '刪除預訂失敗' });
+    console.error('❌ 刪除預訂失敗:', error);
+    res.status(500).json({
+      success: false,
+      error: '刪除預訂失敗',
+      message: error.message
+    });
+  }
+});
+
+// 獲取場地列表
+router.get('/venues', (req, res) => {
+  try {
+    res.json({
+      success: true,
+      data: venues,
+      count: venues.length
+    });
+  } catch (error) {
+    console.error('❌ 獲取場地列表失敗:', error);
+    res.status(500).json({
+      success: false,
+      error: '獲取場地列表失敗',
+      message: error.message
+    });
+  }
+});
+
+// 存儲健康檢查
+router.get('/storage/health', (req, res) => {
+  try {
+    const healthInfo = storage.healthCheck();
+    res.json({
+      success: true,
+      storage: healthInfo
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '存儲健康檢查失敗',
+      message: error.message
+    });
   }
 });
 

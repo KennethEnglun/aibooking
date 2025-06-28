@@ -1,0 +1,36 @@
+# Development files
+*.log
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Node modules (will be installed during build)
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Build artifacts (except frontend/build)
+*.tgz
+*.tar.gz
+
+# Development tools
+.vscode/
+.idea/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Cache
+.cache/
+.parcel-cache/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Local data (development only)
+backend/data/bookings.json 

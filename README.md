@@ -1,6 +1,6 @@
-# AI場地預訂系統
+# 🤖 AI場地預訂系統
 
-一個基於AI LLM模型的智能場地預訂系統，支持自然語言預訂和管理員後台管理。
+一個基於人工智能的智能場地預訂系統，支持自然語言預訂、時間衝突檢測和管理員後台功能。
 
 ## 🚀 AI技術支持
 
@@ -10,142 +10,195 @@
 - 💬 **自然對話體驗**：支持多輪對話和上下文理解
 - 🔄 **後備機制**：API不可用時自動切換到本地處理
 
-## 功能特色
+## ✨ 功能特色
 
-### 用戶功能
-- 🤖 **AI自然語言預訂**：用戶可以用自然語言描述預訂需求
-- 📅 **智能時間解析**：系統自動理解並解析時間和場地信息
-- ⚠️ **衝突檢測**：自動檢查時間衝突並提示用戶
-- 📱 **響應式設計**：支持電腦和手機使用
+### 🎯 核心功能
+- **🤖 AI智能預訂**: 使用DeepSeek API支持中文自然語言預訂
+- **📅 時間表管理**: 完整的場地時間表查看和管理
+- **⚠️ 衝突檢測**: 自动檢測和防止時間衝突
+- **👨‍💼 管理後台**: 完整的管理員功能面板
+- **📱 響應式設計**: 支持桌面和移動設備
+
+### 🏢 支持場地
+- **教室**: 101-104號室、201-204號室、301-304號室
+- **專用室**: 音樂室、電腦室、活動室、英語室、輔導室
+- **大型場地**: 操場、禮堂、壁球室、電競室
+
+### 🛠 技術棧
+- **前端**: React 18 + Tailwind CSS + Lucide React
+- **後端**: Node.js + Express
+- **AI服務**: DeepSeek API + 本地後備處理
+- **部署**: Railway + GitHub Actions
+- **存儲**: 文件存儲 + 內存後備
+
+## 🚀 快速開始
+
+### 本地開發
+
+1. **克隆項目**
+   ```bash
+   git clone https://github.com/KennethEnglun/aibooking.git
+   cd aibooking
+   ```
+
+2. **安裝依賴**
+   ```bash
+   npm run install-all
+   ```
+
+3. **配置環境**
+   ```bash
+   cp backend/.env.example backend/.env
+   # 編輯 .env 文件，添加你的 DeepSeek API Key
+   ```
+
+4. **啟動開發服務器**
+   ```bash
+   npm run dev
+   ```
+
+5. **訪問應用**
+   - 前端: http://localhost:3000
+   - 後端API: http://localhost:5000
+   - 管理後台: http://localhost:3000/admin
+
+### 🌐 Railway部署
+
+1. **一鍵部署**
+   [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/your-template-id)
+
+2. **手動部署**
+   詳細步驟請參考 [Railway部署指南](./RAILWAY_DEPLOY.md)
+
+3. **環境變量配置**
+   ```
+   NODE_ENV=production
+   DEEPSEEK_API_KEY=your_deepseek_api_key
+   ADMIN_PASSWORD=your_admin_password
+   ```
+
+## 📚 使用指南
+
+### AI預訂功能
+系統支持以下自然語言預訂方式：
+
+```
+我想預訂明天下午2點到4點的音樂室，用於社團練習
+幫我預訂12月25日上午10點到12點的禮堂，聖誕節活動
+需要電腦室，下週三全天，程式設計課程
+```
 
 ### 管理員功能
-- 📊 **完整時間表查看**：查看所有場地的預訂狀況
-- ✏️ **預訂管理**：修改、刪除現有預訂
-- 📈 **使用統計**：查看場地使用率統計
+- **登入**: 使用設置的管理員密碼
+- **預訂管理**: 查看、編輯、刪除預訂
+- **統計報告**: 場地使用統計和趨勢分析
+- **系統監控**: 實時查看系統狀態和AI服務狀態
 
-## 可預訂場地
+### API文档
 
-### 教室
-- 101-104號室
-- 201-204號室  
-- 301-304號室
-
-### 專用室
-- 音樂室、電腦室、活動室、英語室
-- 操場、禮堂、壁球室、電競室、輔導室
-
-## 快速開始
-
-### 安裝依賴
-```bash
-npm run install-all
-```
-
-### 環境配置
-1. 複製環境變量文件：
-```bash
-cd backend
-cp .env.example .env
-```
-
-2. 編輯 `.env` 文件，設置您的 DeepSeek API Key：
-```
-PORT=5000
-DEEPSEEK_API_KEY=your_deepseek_api_key_here
-DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
-NODE_ENV=development
-ADMIN_PASSWORD=admin123
-```
-
-### 啟動開發服務器
-```bash
-npm run dev
-```
-
-### 訪問應用
-- 前端界面：http://localhost:3000
-- 後端API：http://localhost:5000
-
-## AI預訂示例
-
-用戶可以這樣預訂：
-- "我想在明天下午2點借101號室開會"
-- "下週三上午使用音樂室練習" 
-- "這個星期五晚上7點在禮堂舉辦活動"
-- "後天上午10點到12點需要電腦室培訓"
-
-系統會自動理解並處理這些請求，提取：
-- 📍 **場地信息**：101號室、音樂室、禮堂等
-- ⏰ **時間信息**：明天下午2點、下週三上午等
-- 🎯 **用途目的**：開會、練習、活動、培訓等
-
-## API端點
-
-### AI相關
-- `POST /api/ai/parse` - AI解析自然語言
-- `POST /api/ai/book` - AI智能預訂
-- `GET /api/ai/status` - 檢查AI服務狀態
-
-### 預訂管理
+#### 預訂相關
 - `GET /api/bookings` - 獲取所有預訂
 - `POST /api/bookings` - 創建新預訂
-- `GET /api/bookings/venues` - 獲取所有場地
+- `PUT /api/bookings/:id` - 更新預訂
+- `DELETE /api/bookings/:id` - 刪除預訂
 
-### 管理員功能
-- `POST /api/admin/login` - 管理員登入
-- `GET /api/admin/dashboard` - 儀表板數據
-- `PUT /api/admin/bookings/:id` - 修改預訂
-- `DELETE /api/admin/bookings/:id` - 刪除預訂
+#### AI服務
+- `POST /api/ai/parse` - AI預訂解析
+- `GET /api/ai/status` - AI服務狀態
 
-## 技術架構
+#### 系統監控
+- `GET /health` - 健康檢查
+- `GET /api/bookings/storage/health` - 存儲狀態
 
-- **前端**：React + TypeScript + Tailwind CSS
-- **後端**：Node.js + Express
-- **AI服務**：DeepSeek API + 本地後備處理
-- **數據存儲**：JSON文件（可升級為數據庫）
+## 🔧 配置說明
 
-## 🔧 AI配置說明
+### 環境變量
 
-### DeepSeek API設置
-1. 註冊 [DeepSeek](https://platform.deepseek.com/) 帳號
-2. 獲取API Key
-3. 在 `backend/.env` 中設置：
-   ```
-   DEEPSEEK_API_KEY=sk-your-api-key-here
-   ```
+| 變數名 | 說明 | 預設值 | 必需 |
+|--------|------|---------|------|
+| `NODE_ENV` | 運行環境 | `development` | ❌ |
+| `PORT` | 服務器端口 | `5000` | ❌ |
+| `DEEPSEEK_API_KEY` | DeepSeek API密鑰 | - | ⚠️ |
+| `ADMIN_PASSWORD` | 管理員密碼 | `admin123` | ⚠️ |
 
-### 功能特性
-- **自動降級**：API不可用時使用本地處理
-- **狀態監控**：實時顯示AI服務連接狀態
-- **錯誤處理**：完善的錯誤處理和重試機制
+### AI配置
+- **模型**: DeepSeek Chat
+- **後備機制**: 本地規則處理
+- **支持語言**: 中文（繁體/簡體）
 
-## 故障排除
+### 存儲配置
+- **主要存儲**: JSON文件
+- **後備存儲**: 內存存儲（適合Railway）
+- **數據持久化**: 支持環境變量配置
 
-### AI相關問題
-1. **API Key無效**：檢查DeepSeek API Key是否正確
-2. **網絡連接問題**：系統會自動切換到後備模式
-3. **解析失敗**：系統會提供幫助信息和示例
+## 📊 項目結構
 
-### 一般問題
-1. **端口被佔用**：修改 `.env` 中的 `PORT` 設置
-2. **依賴安裝失敗**：運行 `npm cache clean --force`
-3. **前端無法連接後端**：確認後端服務正常啟動
+```
+aibooking/
+├── frontend/                 # React前端應用
+│   ├── src/
+│   │   ├── pages/           # 頁面組件
+│   │   ├── App.js           # 主應用
+│   │   └── index.js         # 入口文件
+│   └── package.json
+├── backend/                  # Node.js後端
+│   ├── routes/              # API路由
+│   ├── config/              # 配置文件
+│   ├── data/                # 數據存儲
+│   └── server.js            # 服務器入口
+├── railway.json             # Railway配置
+├── nixpacks.toml           # 構建配置
+└── package.json            # 根配置
+```
 
-## 更新日誌
+## 🛡 安全考慮
 
-### v2.0.0 - AI增強版
-- ✅ 集成DeepSeek AI服務
-- ✅ 真實自然語言理解
-- ✅ AI狀態監控
-- ✅ 智能後備機制
-- ✅ 改進的用戶界面
+- **身份驗證**: 管理員密碼保護
+- **API限制**: 請求頻率限制
+- **數據驗證**: 輸入數據嚴格驗證
+- **錯誤處理**: 完整的錯誤處理機制
 
-### v1.0.0 - 基礎版
-- ✅ 基本預訂功能
-- ✅ 管理員後台
-- ✅ 時間表查看
-- ✅ 響應式設計
+## 📈 性能優化
 
-## 開發團隊
+- **靜態文件**: 優化的靜態文件服務
+- **緩存策略**: 適當的HTTP緩存頭
+- **錯誤恢復**: 自動重試和降級機制
+- **健康監控**: 實時健康檢查
 
-由AI助手開發，使用現代化的React和Node.js技術棧，集成先進的AI語言模型。 
+## 🤝 貢獻指南
+
+1. Fork 這個項目
+2. 創建你的功能分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交你的更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 打開一個 Pull Request
+
+## 📝 更新日誌
+
+### v1.0.0 (2024-12-20)
+- 🎉 初始版本發布
+- ✨ AI智能預訂功能
+- 📅 完整預訂管理系統
+- 👨‍💼 管理員後台
+- 🚀 Railway部署支持
+
+## 📄 許可證
+
+本項目基於 MIT 許可證開源 - 查看 [LICENSE](LICENSE) 文件了解詳情
+
+## 🙏 致謝
+
+- [DeepSeek](https://www.deepseek.com/) - 提供強大的AI語言模型
+- [Railway](https://railway.app/) - 現代化的部署平台
+- [React](https://reactjs.org/) - 用戶界面庫
+- [Tailwind CSS](https://tailwindcss.com/) - 實用優先的CSS框架
+
+## 📞 支持與反饋
+
+- 🐛 [報告問題](https://github.com/KennethEnglun/aibooking/issues)
+- 💡 [功能建議](https://github.com/KennethEnglun/aibooking/discussions)
+- 📧 聯繫我們: [GitHub](https://github.com/KennethEnglun)
+
+---
+
+⭐ 如果這個項目對你有幫助，請給它一個星星！ 
