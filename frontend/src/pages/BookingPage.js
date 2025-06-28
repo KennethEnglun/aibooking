@@ -40,7 +40,7 @@ const BookingPage = () => {
 
   const checkAiStatus = async () => {
     try {
-      const response = await api.get('/ai/status');
+      const response = await api.get('/api/ai/status');
       setAiStatus(response.data);
     } catch (error) {
       console.error('檢查AI狀態失敗:', error);
@@ -68,7 +68,7 @@ const BookingPage = () => {
 
     try {
       // 調用增強的AI解析API
-      const response = await api.post('/ai', {
+      const response = await api.post('/api/ai', {
         text: userMessage
       });
 
@@ -147,7 +147,7 @@ const BookingPage = () => {
         bookingText = `預訂${pendingBooking.venue.name}在${pendingBooking.formattedTime}用於${pendingBooking.purpose}`;
       }
       
-      const response = await api.post('/ai/book', {
+      const response = await api.post('/api/ai/book', {
         text: bookingText,
         contactInfo: contactInfo
       });
