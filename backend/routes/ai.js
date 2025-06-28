@@ -6,8 +6,17 @@ const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
+// 確保環境變量被正確加載
+require('dotenv').config();
+
 const router = express.Router();
 const bookingsFile = path.join(__dirname, '../data/bookings.json');
+
+// 在模塊開始時檢查環境變量
+console.log('🔧 AI模塊環境變量檢查:');
+console.log('🔑 DEEPSEEK_API_KEY:', process.env.DEEPSEEK_API_KEY ? '已配置' : '❌ 缺失');
+console.log('🌐 DEEPSEEK_API_URL:', process.env.DEEPSEEK_API_URL || '使用默認');
+console.log('🎯 NODE_ENV:', process.env.NODE_ENV || 'development');
 
 // 直接讀取/寫入預訂數據的輔助函數
 const readBookings = () => {
@@ -90,6 +99,13 @@ const createRecurringBookings = async (bookingData, recurringInfo) => {
 const processNaturalLanguageWithAI = async (text) => {
   console.log('🤖 開始處理用戶輸入:', text);
   
+  // 檢查環境變量
+  if (!process.env.DEEPSEEK_API_KEY) {
+    console.error('❌ DEEPSEEK_API_KEY 環境變量未設置');
+    console.log('🔄 使用後備處理邏輯');
+    return await enhancedFallbackProcessing(text);
+  }
+  
   const venues = getAllVenues();
   const venueList = venues.map(v => `${v.name}(${v.type})`).join('、');
   
@@ -133,7 +149,7 @@ ${venueList}
 
 請分析用戶輸入並返回JSON結果：`;
 
-  // 添加重試機制的DeepSeek API調用
+  // 增強的重試機制
   let lastError = null;
   let response = null;
   const maxRetries = 3;
@@ -143,7 +159,7 @@ ${venueList}
       console.log(`📡 調用DeepSeek API... (嘗試 ${attempt}/${maxRetries})`);
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20秒超時
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 增加到30秒超時
       
       response = await axios.post(
         process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions',
@@ -168,7 +184,7 @@ ${venueList}
             'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
             'Content-Type': 'application/json'
           },
-          timeout: 20000,
+          timeout: 30000,
           signal: controller.signal
         }
       );
@@ -182,7 +198,8 @@ ${venueList}
       console.log(`❌ DeepSeek API調用失敗 (嘗試 ${attempt}/${maxRetries}):`, apiError.message);
       
       if (attempt < maxRetries) {
-        const delay = attempt * 1000; // 遞增延遲：1秒，2秒，3秒
+        // 指數退避算法：1秒、2秒、4秒，最大5秒
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
         console.log(`⏳ 等待 ${delay}ms 後重試...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
@@ -196,7 +213,6 @@ ${venueList}
   }
   
   try {
-
     const aiResponse = response.data.choices[0].message.content.trim();
     console.log('🤖 DeepSeek 原始回應:', aiResponse);
     
@@ -251,17 +267,17 @@ ${venueList}
           endTime = aiEndMoment.format('YYYY-MM-DDTHH:mm:ss');
           console.log('✅ AI時間解析有效:', { startTime, endTime });
         } else {
-                     console.log('⚠️ AI時間解析無效，使用默認邏輯');
-           // 使用默認的2小時預訂
-           const now = moment().utcOffset('+08:00'); // 香港時區
-           startTime = now.format('YYYY-MM-DDTHH:mm:ss');
-           endTime = now.add(2, 'hours').format('YYYY-MM-DDTHH:mm:ss');
+          console.log('⚠️ AI時間解析無效，使用默認邏輯');
+          // 使用默認的2小時預訂
+          const now = moment().utcOffset('+08:00'); // 香港時區
+          startTime = now.format('YYYY-MM-DDTHH:mm:ss');
+          endTime = now.add(2, 'hours').format('YYYY-MM-DDTHH:mm:ss');
         }
       } else {
-                 console.log('⚠️ 所有時間解析都失敗，使用默認時間');
-         const now = moment().utcOffset('+08:00'); // 香港時區
-         startTime = now.format('YYYY-MM-DDTHH:mm:ss');
-         endTime = now.add(2, 'hours').format('YYYY-MM-DDTHH:mm:ss');
+        console.log('⚠️ 所有時間解析都失敗，使用默認時間');
+        const now = moment().utcOffset('+08:00'); // 香港時區
+        startTime = now.format('YYYY-MM-DDTHH:mm:ss');
+        endTime = now.add(2, 'hours').format('YYYY-MM-DDTHH:mm:ss');
       }
       
       const result = {
