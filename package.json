@@ -5,14 +5,11 @@
   "main": "backend/server.js",
   "scripts": {
     "start": "cd backend && npm start",
-    "build": "npm run install-deps && npm run build-frontend",
-    "install-deps": "npm install && cd backend && npm install && cd ../frontend && npm install",
-    "build-frontend": "cd frontend && npm run build",
+    "build": "cd frontend && npm run build",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "cd backend && npm run dev",
     "client": "cd frontend && npm start",
-    "postinstall": "npm run install-deps",
-    "heroku-postbuild": "npm run build-frontend"
+    "install-all": "cd backend && npm install && cd ../frontend && npm install"
   },
   "keywords": ["ai", "booking", "venue", "reservation", "railway"],
   "author": "AI Booking System",
