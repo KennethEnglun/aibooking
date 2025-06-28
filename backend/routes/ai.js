@@ -133,34 +133,69 @@ ${venueList}
 
 請分析用戶輸入並返回JSON結果：`;
 
-  try {
-    console.log('📡 調用DeepSeek API...');
-    const response = await axios.post(
-      process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions',
-      {
-        model: "deepseek-chat",
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt
-          },
-          {
-            role: "user", 
-            content: text
-          }
-        ],
-        temperature: 0.1,
-        max_tokens: 800,
-        top_p: 0.9
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-          'Content-Type': 'application/json'
+  // 添加重試機制的DeepSeek API調用
+  let lastError = null;
+  let response = null;
+  const maxRetries = 3;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`📡 調用DeepSeek API... (嘗試 ${attempt}/${maxRetries})`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20秒超時
+      
+      response = await axios.post(
+        process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions',
+        {
+          model: "deepseek-chat",
+          messages: [
+            {
+              role: "system",
+              content: systemPrompt
+            },
+            {
+              role: "user", 
+              content: text
+            }
+          ],
+          temperature: 0.1,
+          max_tokens: 800,
+          top_p: 0.9
         },
-        timeout: 15000
+        {
+          headers: {
+            'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 20000,
+          signal: controller.signal
+        }
+      );
+      
+      clearTimeout(timeoutId);
+      console.log('✅ DeepSeek API調用成功');
+      break; // 成功則跳出重試循環
+      
+    } catch (apiError) {
+      lastError = apiError;
+      console.log(`❌ DeepSeek API調用失敗 (嘗試 ${attempt}/${maxRetries}):`, apiError.message);
+      
+      if (attempt < maxRetries) {
+        const delay = attempt * 1000; // 遞增延遲：1秒，2秒，3秒
+        console.log(`⏳ 等待 ${delay}ms 後重試...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
-    );
+    }
+  }
+  
+  if (!response) {
+    console.error('❌ DeepSeek API 所有重試都失敗:', lastError?.message);
+    console.log('🔄 使用後備處理邏輯');
+    return await enhancedFallbackProcessing(text);
+  }
+  
+  try {
 
     const aiResponse = response.data.choices[0].message.content.trim();
     console.log('🤖 DeepSeek 原始回應:', aiResponse);
@@ -250,15 +285,14 @@ ${venueList}
     } catch (parseError) {
       console.error('❌ 解析AI回應失敗:', parseError.message);
       console.log('🔄 使用後備解析邏輯');
+      return await enhancedFallbackProcessing(text);
     }
     
-  } catch (error) {
-    console.error('❌ DeepSeek API 調用失敗:', error.message);
+  } catch (responseError) {
+    console.error('❌ 處理API響應失敗:', responseError.message);
     console.log('🔄 使用後備處理邏輯');
+    return await enhancedFallbackProcessing(text);
   }
-  
-  // 使用增強的後備邏輯
-  return await enhancedFallbackProcessing(text);
 };
 
 // 解析重複預訂信息
