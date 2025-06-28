@@ -13,9 +13,15 @@ const PORT = process.env.PORT || 5000;
 // 判斷是否為生產環境
 const isProduction = process.env.NODE_ENV === 'production';
 
+// 💡 允許以逗號分隔多個前端網域，例如
+// FRONTEND_URL="https://myapp.netlify.app,https://www.myapp.com"
+const allowedOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(',').map(o => o.trim())
+  : undefined;
+
 // 中間件
 app.use(cors({
-  origin: isProduction ? true : 'http://localhost:3000',
+  origin: isProduction ? (allowedOrigins || true) : 'http://localhost:3000',
   credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));

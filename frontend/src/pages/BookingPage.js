@@ -1,13 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Calendar, MapPin, Clock, CheckCircle, AlertCircle, Zap } from 'lucide-react';
-import axios from 'axios';
+import api from '../api';
 import moment from 'moment';
-
-// 配置axios基礎URL
-const api = axios.create({
-  baseURL: process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5000',
-  timeout: 10000
-});
 
 const BookingPage = () => {
   const [messages, setMessages] = useState([

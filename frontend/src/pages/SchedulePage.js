@@ -1,13 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Calendar, MapPin, Clock, Users, Filter, RefreshCw } from 'lucide-react';
-import axios from 'axios';
+import api from '../api';
 import moment from 'moment';
-
-// 配置axios基礎URL（生產環境使用相對路徑）
-const api = axios.create({
-  baseURL: process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5000',
-  timeout: 10000
-});
 
 const SchedulePage = () => {
   const [bookings, setBookings] = useState([]);

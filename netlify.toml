@@ -1,0 +1,14 @@
+[build]
+  base = "frontend"
+  publish = "frontend/build"
+  command = "npm run build"
+
+[build.environment]
+  # 在 Netlify 後台設定 REACT_APP_API_BASE_URL 會更安全；
+  # 若僅用於測試，也可在此直接填值
+  # REACT_APP_API_BASE_URL = "https://your-railway-app.up.railway.app"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200 

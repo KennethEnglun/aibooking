@@ -16,8 +16,12 @@ console.log(`📂 當前目錄: ${process.cwd()}`);
 console.log(`🎯 生產環境: ${isProduction}`);
 
 // 基本中間件
+const allowedOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(',').map(o => o.trim())
+  : undefined;
+
 app.use(cors({
-  origin: isProduction ? true : 'http://localhost:3000',
+  origin: isProduction ? (allowedOrigins || true) : 'http://localhost:3000',
   credentials: true
 }));
 app.use(express.json());

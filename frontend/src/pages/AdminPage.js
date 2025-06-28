@@ -1,13 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Lock, Settings, BarChart3, Users, Calendar, MapPin, Edit, Trash2 } from 'lucide-react';
-import axios from 'axios';
+import api from '../api';
 import moment from 'moment';
-
-// 配置axios基礎URL
-const api = axios.create({
-  baseURL: process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5000',
-  timeout: 10000
-});
 
 const AdminPage = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
