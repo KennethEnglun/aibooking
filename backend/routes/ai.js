@@ -194,19 +194,21 @@ ${venueList}
         startTime = timeResult.startTime;
         endTime = timeResult.endTime;
       } else if (startTime && moment(startTime).isValid()) {
-        // 🔧 修復時區問題：如果AI返回的是UTC時間，轉換為本地時區格式
-        const startMoment = moment(startTime);
-        const endMoment = moment(endTime);
-        
-        // 檢查是否為UTC格式（包含Z或+00:00）
-        if (startTime.includes('Z') || startTime.includes('+00:00')) {
-          console.log('🔧 檢測到UTC時間，轉換為本地時區格式');
-          // 將UTC時間轉換為本地時間字符串
-          const localStart = moment.utc(startTime).utcOffset('+08:00');
-          const localEnd = moment.utc(endTime).utcOffset('+08:00');
+        // 🔧 完全避免時區問題：使用簡化的本地時間格式
+        if (startTime.includes('Z') || startTime.includes('+00:00') || startTime.includes('+08:00')) {
+          console.log('🔧 檢測到時區時間，轉換為簡化本地格式');
+          // 解析時間並提取小時、分鐘，忽略日期和時區
+          const startMoment = moment(startTime);
+          const endMoment = moment(endTime);
+          
+          // 使用今天的日期，但保持原有的小時和分鐘
+          const today = moment();
+          const localStart = today.clone().hour(startMoment.hour()).minute(startMoment.minute()).second(0);
+          const localEnd = today.clone().hour(endMoment.hour()).minute(endMoment.minute()).second(0);
+          
           startTime = localStart.format('YYYY-MM-DDTHH:mm:ss');
           endTime = localEnd.format('YYYY-MM-DDTHH:mm:ss');
-          console.log('✅ 時間轉換完成:', { startTime, endTime });
+          console.log('✅ 時間簡化完成:', { startTime, endTime });
         }
       }
       
