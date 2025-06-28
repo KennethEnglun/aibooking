@@ -118,10 +118,10 @@ temp/
 ehthumbs.db
 Thumbs.db
 
-# Data files
-backend/data/
+# Data files (但保留代碼文件)
 backend/data/bookings.json
-backend/data/storage/*.json
+backend/data/storage/
+!backend/data/storage.js
 
 # Mac OS
 .DS_Store
