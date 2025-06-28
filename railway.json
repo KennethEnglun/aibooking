@@ -5,7 +5,7 @@
     "buildCommand": "echo '🔧 開始構建...' && cd backend && echo '📦 安裝後端依賴...' && npm install && echo '✅ 後端依賴($(ls node_modules | wc -l)個包)' && cd ../frontend && echo '📦 安裝前端依賴...' && npm install && echo '🏗️ 構建前端...' && npm run build && echo '✅ 構建完成'"
   },
   "deploy": {
-    "startCommand": "echo '🚀 Railway啟動檢查...' && echo 'PORT='$PORT && echo 'PWD='$(pwd) && cd backend && echo '📂 後端文件:' && ls -la *.js *.json && echo '📦 依賴檢查:' && ls node_modules | wc -l && echo '個包已安裝' && echo '🚀 啟動服務器...' && node server.js",
+    "startCommand": "echo '🚀 Railway啟動檢查...' && echo 'PORT='$PORT && echo 'PWD='$(pwd) && cd backend && echo '📂 後端文件:' && ls -la *.js *.json && echo '📦 依賴檢查:' && ls node_modules | wc -l && echo '個包已安裝' && echo '🚀 啟動最小化服務器...' && node server-minimal.js",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 600,
     "healthcheckInterval": 30,

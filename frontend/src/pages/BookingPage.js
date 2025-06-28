@@ -104,8 +104,21 @@ const BookingPage = () => {
       });
 
       if (response.data.success) {
-        addMessage('ai', '🎉 預訂成功！', {
+        let successMessage = '🎉 預訂成功！';
+        
+        // 如果是重複預訂，調整消息
+        if (response.data.recurringBookings && response.data.recurringBookings.length > 1) {
+          successMessage = `🎉 重複預訂成功！已創建 ${response.data.recurringBookings.length} 個預訂。`;
+          
+          if (response.data.conflicts && response.data.conflicts.length > 0) {
+            successMessage += ` 其中 ${response.data.conflicts.length} 個時段因衝突未能預訂。`;
+          }
+        }
+        
+        addMessage('ai', successMessage, {
           booking: response.data.booking,
+          recurringBookings: response.data.recurringBookings,
+          conflicts: response.data.conflicts,
           showSuccess: true,
           aiProvider: response.data.aiProvider
         });
@@ -115,10 +128,20 @@ const BookingPage = () => {
       }
     } catch (error) {
       if (error.response?.status === 409) {
-        addMessage('ai', '❌ 抱歉，該時段已被預訂。請選擇其他時間。', {
-          showError: true
-        });
+        // 處理衝突錯誤
+        const conflictData = error.response.data;
+        if (conflictData.conflicts) {
+          addMessage('ai', `❌ 重複預訂失敗：所有 ${conflictData.conflicts.length} 個時段都已被佔用。`, {
+            conflicts: conflictData.conflicts,
+            showError: true
+          });
+        } else {
+          addMessage('ai', '❌ 抱歉，該時段已被預訂。請選擇其他時間。', {
+            showError: true
+          });
+        }
       } else {
+        console.error('預訂失敗:', error);
         addMessage('ai', '❌ 預訂失敗，請稍後再試。');
       }
       setShowContactModal(false);
@@ -195,6 +218,51 @@ const BookingPage = () => {
                   <p><strong>時間:</strong> {moment(message.booking.startTime).format('YYYY-MM-DD HH:mm')} - {moment(message.booking.endTime).format('HH:mm')}</p>
                   <p><strong>用途:</strong> {message.booking.purpose}</p>
                 </div>
+                
+                {/* 重複預訂信息 */}
+                {message.recurringBookings && message.recurringBookings.length > 1 && (
+                  <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <Calendar className="w-4 h-4 text-blue-600" />
+                      <span className="font-medium text-blue-800">重複預訂已創建</span>
+                    </div>
+                    <p className="text-sm text-blue-700 mb-2">
+                      成功創建 {message.recurringBookings.length} 個預訂
+                    </p>
+                    <div className="text-xs text-blue-600 max-h-20 overflow-y-auto">
+                      {message.recurringBookings.slice(0, 5).map((booking, index) => (
+                        <div key={index}>
+                          {moment(booking.startTime).format('YYYY-MM-DD HH:mm')}
+                        </div>
+                      ))}
+                      {message.recurringBookings.length > 5 && (
+                        <div className="text-blue-500">
+                          ...還有 {message.recurringBookings.length - 5} 個預訂
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                {/* 衝突信息 */}
+                {message.conflicts && message.conflicts.length > 0 && (
+                  <div className="mt-3 p-3 bg-yellow-50 rounded border border-yellow-200">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <AlertCircle className="w-4 h-4 text-yellow-600" />
+                      <span className="font-medium text-yellow-800">部分時段衝突</span>
+                    </div>
+                    <p className="text-sm text-yellow-700 mb-2">
+                      以下 {message.conflicts.length} 個時段已被佔用，未能預訂：
+                    </p>
+                    <div className="text-xs text-yellow-600 max-h-20 overflow-y-auto">
+                      {message.conflicts.map((conflict, index) => (
+                        <div key={index}>
+                          {conflict.date} {conflict.time}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             

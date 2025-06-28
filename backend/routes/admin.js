@@ -84,13 +84,13 @@ router.get('/dashboard', (req, res) => {
   }
 });
 
-// GET /api/admin/schedule - 獲取完整時間表
+// GET /api/admin/schedule - 獲取完整時間表（公開訪問）
 router.get('/schedule', (req, res) => {
   try {
     const { date, venue } = req.query;
     const bookings = readBookings();
     
-    let filteredBookings = bookings;
+    let filteredBookings = bookings.filter(b => b.status === 'confirmed'); // 只顯示已確認的預訂
     
     // 按日期過濾
     if (date) {
@@ -107,8 +107,19 @@ router.get('/schedule', (req, res) => {
     // 按時間排序
     filteredBookings.sort((a, b) => moment(a.startTime).diff(moment(b.startTime)));
     
+    // 為每個預訂添加場地名稱（如果缺失）
+    const venues = getAllVenues();
+    filteredBookings = filteredBookings.map(booking => {
+      if (!booking.venueName) {
+        const venue = venues.find(v => v.id === booking.venueId);
+        booking.venueName = venue ? venue.name : `場地 ${booking.venueId}`;
+      }
+      return booking;
+    });
+    
     res.json(filteredBookings);
   } catch (error) {
+    console.error('獲取時間表失敗:', error);
     res.status(500).json({ error: '無法獲取時間表' });
   }
 });
