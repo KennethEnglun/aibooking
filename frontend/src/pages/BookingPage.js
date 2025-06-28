@@ -66,7 +66,7 @@ const BookingPage = () => {
         text: userMessage
       });
 
-      const { parsed, canProceed, suggestions, error, help, aiProvider } = response.data;
+      const { canProceed, suggestions, error, help, aiProvider } = response.data;
 
       if (canProceed && suggestions.length > 0) {
         const suggestion = suggestions[0];

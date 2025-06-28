@@ -17,7 +17,7 @@ const SchedulePage = () => {
 
   useEffect(() => {
     fetchBookings();
-  }, [selectedDate, selectedVenue]);
+  }, [selectedDate, selectedVenue, fetchBookings]);
 
   const fetchData = async () => {
     try {
@@ -34,7 +34,7 @@ const SchedulePage = () => {
     }
   };
 
-  const fetchBookings = async () => {
+  const fetchBookings = useCallback(async () => {
     try {
       const params = new URLSearchParams();
       if (selectedDate) params.append('date', selectedDate);
@@ -45,7 +45,7 @@ const SchedulePage = () => {
     } catch (error) {
       console.error('獲取預訂數據失敗:', error);
     }
-  };
+  }, [selectedDate, selectedVenue]);
 
   const getStatusColor = (status) => {
     switch (status) {

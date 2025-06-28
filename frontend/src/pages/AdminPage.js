@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, Settings, BarChart3, Users, Calendar, MapPin, Edit, Trash2, Eye } from 'lucide-react';
+import { Lock, Settings, BarChart3, Users, Calendar, MapPin, Edit, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import moment from 'moment';
 
