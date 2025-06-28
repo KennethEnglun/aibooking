@@ -3,6 +3,12 @@ import { Send, Bot, User, Calendar, MapPin, Clock, CheckCircle, AlertCircle, Zap
 import axios from 'axios';
 import moment from 'moment';
 
+// 配置axios基礎URL
+const api = axios.create({
+  baseURL: process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5001',
+  timeout: 10000
+});
+
 const BookingPage = () => {
   const [messages, setMessages] = useState([
     {
@@ -34,7 +40,7 @@ const BookingPage = () => {
 
   const checkAiStatus = async () => {
     try {
-      const response = await axios.get('/api/ai/status');
+      const response = await api.get('/ai/status');
       setAiStatus(response.data);
     } catch (error) {
       console.error('檢查AI狀態失敗:', error);
@@ -62,20 +68,34 @@ const BookingPage = () => {
 
     try {
       // 調用增強的AI解析API
-      const response = await axios.post('/api/ai', {
+      const response = await api.post('/ai', {
         text: userMessage
       });
 
       const { success, canProceed, suggestions, error, help, parsed } = response.data;
 
       if (success && canProceed && suggestions.length > 0) {
-        const suggestion = suggestions[0];
         const aiProvider = parsed?.aiProvider || 'AI';
-        addMessage('ai', `我理解了您的預訂需求！(由${aiProvider}提供支持)`, {
-          suggestion: suggestion,
-          showConfirm: true,
-          aiProvider: aiProvider
-        });
+        
+        // 檢查是否為重複預訂
+        const isRecurring = suggestions.some(s => s.recurring && s.recurring.isRecurring);
+        
+        if (isRecurring) {
+          const pattern = suggestions[0].recurring.pattern;
+          addMessage('ai', `我理解了您的重複預訂需求！(由${aiProvider}提供支持)\n檢測到：${pattern}，將創建 ${suggestions.length} 個預訂`, {
+            suggestions: suggestions,
+            showConfirm: true,
+            aiProvider: aiProvider,
+            isRecurring: true
+          });
+        } else {
+          const suggestion = suggestions[0];
+          addMessage('ai', `我理解了您的預訂需求！(由${aiProvider}提供支持)`, {
+            suggestion: suggestion,
+            showConfirm: true,
+            aiProvider: aiProvider
+          });
+        }
       } else if (error) {
         const aiProvider = parsed?.aiProvider || 'AI';
         addMessage('ai', error, { 
@@ -100,8 +120,16 @@ const BookingPage = () => {
     }
   };
 
-  const handleConfirmBooking = (suggestion) => {
-    setPendingBooking(suggestion);
+  const handleConfirmBooking = (suggestion, isRecurring = false, suggestions = []) => {
+    if (isRecurring) {
+      setPendingBooking({ 
+        ...suggestion, 
+        isRecurring: true, 
+        allSuggestions: suggestions 
+      });
+    } else {
+      setPendingBooking(suggestion);
+    }
     setShowContactModal(true);
   };
 
@@ -110,8 +138,17 @@ const BookingPage = () => {
 
     setIsLoading(true);
     try {
-      const response = await axios.post('/api/ai/book', {
-        text: `預訂${pendingBooking.venue.name}在${pendingBooking.formattedTime}用於${pendingBooking.purpose}`,
+      let bookingText;
+      if (pendingBooking.isRecurring) {
+        // 構建重複預訂的文本
+        const pattern = pendingBooking.allSuggestions[0].recurring.pattern;
+        bookingText = `${pattern}預訂${pendingBooking.venue.name}在${pendingBooking.formattedStartTime}用於${pendingBooking.purpose}`;
+      } else {
+        bookingText = `預訂${pendingBooking.venue.name}在${pendingBooking.formattedTime}用於${pendingBooking.purpose}`;
+      }
+      
+      const response = await api.post('/ai/book', {
+        text: bookingText,
         contactInfo: contactInfo
       });
 
@@ -119,18 +156,18 @@ const BookingPage = () => {
         let successMessage = '🎉 預訂成功！';
         
         // 如果是重複預訂，調整消息
-        if (response.data.recurringBookings && response.data.recurringBookings.length > 1) {
-          successMessage = `🎉 重複預訂成功！已創建 ${response.data.recurringBookings.length} 個預訂。`;
+        if (response.data.bookings && response.data.bookings.length > 1) {
+          successMessage = `🎉 重複預訂成功！已創建 ${response.data.bookings.length} 個預訂。`;
           
-          if (response.data.conflicts && response.data.conflicts.length > 0) {
-            successMessage += ` 其中 ${response.data.conflicts.length} 個時段因衝突未能預訂。`;
+          if (response.data.conflictDates && response.data.conflictDates.length > 0) {
+            successMessage += ` 其中 ${response.data.conflictDates.length} 個時段因衝突未能預訂。`;
           }
         }
         
         addMessage('ai', successMessage, {
-          booking: response.data.booking,
-          recurringBookings: response.data.recurringBookings,
-          conflicts: response.data.conflicts,
+          booking: response.data.booking || response.data.bookings[0],
+          recurringBookings: response.data.bookings,
+          conflicts: response.data.conflictDates,
           showSuccess: true,
           aiProvider: response.data.aiProvider
         });
@@ -212,6 +249,47 @@ const BookingPage = () => {
                     className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-primary-700 transition-colors"
                   >
                     確認預訂
+                  </button>
+                )}
+              </div>
+            )}
+            
+            {/* 重複預訂建議卡片 */}
+            {message.suggestions && message.isRecurring && (
+              <div className="mt-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center space-x-2 mb-2">
+                  <Calendar className="w-4 h-4 text-blue-600" />
+                  <span className="font-medium text-blue-800">重複預訂詳情</span>
+                </div>
+                <div className="space-y-2 mb-3">
+                  <div className="text-sm">
+                    <strong>場地:</strong> {message.suggestions[0].venue.name}
+                  </div>
+                  <div className="text-sm">
+                    <strong>用途:</strong> {message.suggestions[0].purpose}
+                  </div>
+                  <div className="text-sm">
+                    <strong>預訂時段:</strong>
+                  </div>
+                  <div className="max-h-32 overflow-y-auto text-xs bg-white rounded p-2">
+                    {message.suggestions.slice(0, 5).map((suggestion, index) => (
+                      <div key={index} className="py-1">
+                        第{suggestion.occurrence}次: {suggestion.formattedTime}
+                      </div>
+                    ))}
+                    {message.suggestions.length > 5 && (
+                      <div className="text-gray-500 mt-1">
+                        ...還有 {message.suggestions.length - 5} 個預訂
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {message.showConfirm && (
+                  <button
+                    onClick={() => handleConfirmBooking(message.suggestions[0], true, message.suggestions)}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition-colors"
+                  >
+                    確認重複預訂
                   </button>
                 )}
               </div>

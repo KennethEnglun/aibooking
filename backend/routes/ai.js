@@ -261,6 +261,88 @@ ${venueList}
   return await enhancedFallbackProcessing(text);
 };
 
+// 解析重複預訂信息
+const extractRecurringInfo = (text) => {
+  const recurringPatterns = [
+    { pattern: /逢(星期|週)([一二三四五六日天])/g, type: 'weekly' },
+    { pattern: /每(星期|週)([一二三四五六日天])/g, type: 'weekly' },
+    { pattern: /(星期|週)([一二三四五六日天]).*每?週?/g, type: 'weekly' },
+    { pattern: /每(個)?月/g, type: 'monthly' },
+    { pattern: /逢月/g, type: 'monthly' },
+    { pattern: /每天/g, type: 'daily' },
+    { pattern: /每日/g, type: 'daily' }
+  ];
+  
+  for (const { pattern, type } of recurringPatterns) {
+    const match = pattern.exec(text);
+    if (match) {
+      let dayOfWeek = null;
+      if (type === 'weekly' && match[2]) {
+        const dayMapping = {
+          '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '日': 0, '天': 0
+        };
+        dayOfWeek = dayMapping[match[2]];
+      }
+      
+      console.log('📅 檢測到重複預訂:', { type, dayOfWeek, originalText: match[0] });
+      return { 
+        type, 
+        dayOfWeek, 
+        isRecurring: true,
+        pattern: match[0]
+      };
+    }
+  }
+  
+  return { isRecurring: false };
+};
+
+// 生成重複預訂的時間列表
+const generateRecurringDates = (startTime, endTime, recurringInfo, maxOccurrences = 12) => {
+  const dates = [];
+  const startMoment = moment(startTime);
+  const endMoment = moment(endTime);
+  const duration = endMoment.diff(startMoment);
+  
+  let currentDate = startMoment.clone();
+  
+  // 如果是每週重複，調整到指定的星期幾
+  if (recurringInfo.type === 'weekly' && recurringInfo.dayOfWeek !== null) {
+    const targetDay = recurringInfo.dayOfWeek;
+    const currentDay = currentDate.day();
+    const daysToAdd = (targetDay - currentDay + 7) % 7;
+    if (daysToAdd > 0) {
+      currentDate.add(daysToAdd, 'days');
+    }
+  }
+  
+  for (let i = 0; i < maxOccurrences; i++) {
+    const eventStart = currentDate.clone();
+    const eventEnd = eventStart.clone().add(duration);
+    
+    dates.push({
+      startTime: eventStart.toISOString(),
+      endTime: eventEnd.toISOString(),
+      occurrence: i + 1
+    });
+    
+    // 根據重複類型增加時間間隔
+    switch (recurringInfo.type) {
+      case 'weekly':
+        currentDate.add(1, 'week');
+        break;
+      case 'daily':
+        currentDate.add(1, 'day');
+        break;
+      case 'monthly':
+        currentDate.add(1, 'month');
+        break;
+    }
+  }
+  
+  return dates;
+};
+
 // 從文本中提取場地
 const extractVenueFromText = (text) => {
   const venues = getAllVenues();
@@ -673,14 +755,24 @@ router.post('/', async (req, res) => {
     
     console.log('🚀 收到AI處理請求:', { text, timestamp: new Date().toISOString() });
     
+    // 檢查是否為重複預訂
+    const recurringInfo = extractRecurringInfo(text);
+    console.log('🔄 重複預訂檢查:', recurringInfo);
+    
     // 使用增強的AI處理
     const parsed = await processNaturalLanguageWithAI(text);
+    
+    // 如果檢測到重複預訂，添加重複信息
+    if (recurringInfo.isRecurring) {
+      parsed.recurring = recurringInfo;
+    }
     
     console.log('🎯 AI處理完成:', {
       venue: parsed.venue?.name || 'none',
       confidence: parsed.confidence,
       aiProvider: parsed.aiProvider || 'unknown',
-      hasTime: !!parsed.startTime
+      hasTime: !!parsed.startTime,
+      isRecurring: recurringInfo.isRecurring
     });
     
     // 構建詳細回應
@@ -719,35 +811,78 @@ router.post('/', async (req, res) => {
         endMoment = moment(parsed.endTime, 'YYYY-MM-DDTHH:mm:ss');
       }
       
-      const suggestion = {
-        venue: parsed.venue,
-        startTime: parsed.startTime,
-        endTime: parsed.endTime,
-        purpose: parsed.purpose,
-        formattedTime: `${startMoment.format('YYYY年MM月DD日 HH:mm')} - ${endMoment.format('HH:mm')}`,
-        formattedDate: startMoment.format('YYYY-MM-DD'),
-        formattedStartTime: startMoment.format('HH:mm'),
-        formattedEndTime: endMoment.format('HH:mm'),
-        duration: endMoment.diff(startMoment, 'hours', true),
-        recurring: parsed.recurring
-      };
-      
-      response.suggestions.push(suggestion);
+      // 如果是重複預訂，生成多個建議
+      if (recurringInfo.isRecurring) {
+        const recurringDates = generateRecurringDates(
+          parsed.startTime, 
+          parsed.endTime, 
+          recurringInfo, 
+          8 // 生成8週的重複預訂
+        );
+        
+        recurringDates.forEach((dateInfo, index) => {
+          const recStartMoment = moment(dateInfo.startTime);
+          const recEndMoment = moment(dateInfo.endTime);
+          
+          const suggestion = {
+            venue: parsed.venue,
+            startTime: dateInfo.startTime,
+            endTime: dateInfo.endTime,
+            purpose: parsed.purpose,
+            formattedTime: `${recStartMoment.format('YYYY年MM月DD日 HH:mm')} - ${recEndMoment.format('HH:mm')}`,
+            formattedDate: recStartMoment.format('YYYY-MM-DD'),
+            formattedStartTime: recStartMoment.format('HH:mm'),
+            formattedEndTime: recEndMoment.format('HH:mm'),
+            duration: recEndMoment.diff(recStartMoment, 'hours', true),
+            recurring: recurringInfo,
+            occurrence: dateInfo.occurrence
+          };
+          
+          response.suggestions.push(suggestion);
+        });
+        
+        console.log(`✅ 生成了 ${recurringDates.length} 個重複預訂建議`);
+      } else {
+        // 單次預訂
+        const suggestion = {
+          venue: parsed.venue,
+          startTime: parsed.startTime,
+          endTime: parsed.endTime,
+          purpose: parsed.purpose,
+          formattedTime: `${startMoment.format('YYYY年MM月DD日 HH:mm')} - ${endMoment.format('HH:mm')}`,
+          formattedDate: startMoment.format('YYYY-MM-DD'),
+          formattedStartTime: startMoment.format('HH:mm'),
+          formattedEndTime: endMoment.format('HH:mm'),
+          duration: endMoment.diff(startMoment, 'hours', true),
+          recurring: parsed.recurring
+        };
+        
+        response.suggestions.push(suggestion);
+        console.log('✅ 預訂建議生成成功:', suggestion);
+      }
       
       // 檢查時間衝突
       const existingBookings = readBookings();
-      const hasConflict = hasTimeConflict({
-        venueId: parsed.venue.id,
-        startTime: parsed.startTime,
-        endTime: parsed.endTime
-      }, existingBookings);
+      let hasConflict = false;
       
-      if (hasConflict) {
-        response.warning = '該時段可能已被預訂，請確認是否繼續';
-        response.hasConflict = true;
+      // 檢查每個建議是否有衝突
+      for (const suggestion of response.suggestions) {
+        const conflict = hasTimeConflict({
+          venueId: parsed.venue.id,
+          startTime: suggestion.startTime,
+          endTime: suggestion.endTime
+        }, existingBookings);
+        
+        if (conflict) {
+          hasConflict = true;
+          break;
+        }
       }
       
-      console.log('✅ 預訂建議生成成功:', suggestion);
+      if (hasConflict) {
+        response.warning = '某些時段可能已被預訂，請確認是否繼續';
+        response.hasConflict = true;
+      }
       
     } else {
       // 處理解析失敗的情況
@@ -829,6 +964,9 @@ router.post('/book', async (req, res) => {
       return res.status(400).json({ error: '請提供預訂文本和聯絡信息' });
     }
     
+    // 檢查是否為重複預訂
+    const recurringInfo = extractRecurringInfo(text);
+    
     const parsed = await processNaturalLanguageWithAI(text);
     
     if (!parsed.venue || !parsed.startTime || parsed.confidence <= 0.5) {
@@ -838,6 +976,98 @@ router.post('/book', async (req, res) => {
       });
     }
     
+    console.log('準備創建預訂:', {
+      venueId: parsed.venue.id,
+      venueName: parsed.venue.name,
+      startTime: parsed.startTime,
+      endTime: parsed.endTime,
+      purpose: parsed.purpose,
+      contactInfo: contactInfo,
+      isRecurring: recurringInfo.isRecurring
+    });
+    
+    // 如果是重複預訂，創建多個預訂
+    if (recurringInfo.isRecurring) {
+      const recurringDates = generateRecurringDates(
+        parsed.startTime, 
+        parsed.endTime, 
+        recurringInfo, 
+        8 // 生成8週的重複預訂
+      );
+      
+      const bookings = [];
+      const conflictDates = [];
+      const existingBookings = readBookings();
+      
+      // 為每個日期創建預訂
+      for (const dateInfo of recurringDates) {
+        // 檢查時間衝突
+        const hasConflict = hasTimeConflict({
+          venueId: parsed.venue.id,
+          startTime: dateInfo.startTime,
+          endTime: dateInfo.endTime
+        }, existingBookings);
+        
+        if (hasConflict) {
+          conflictDates.push(moment(dateInfo.startTime).format('YYYY-MM-DD HH:mm'));
+          continue;
+        }
+        
+        const booking = {
+          id: uuidv4(),
+          venueId: parsed.venue.id,
+          venueName: parsed.venue.name,
+          startTime: dateInfo.startTime,
+          endTime: dateInfo.endTime,
+          purpose: parsed.purpose,
+          contactInfo: contactInfo,
+          status: 'confirmed',
+          createdAt: new Date().toISOString(),
+          recurring: true,
+          recurringType: recurringInfo.type,
+          recurringPattern: recurringInfo.pattern,
+          occurrence: dateInfo.occurrence
+        };
+        
+        bookings.push(booking);
+      }
+      
+      // 保存所有預訂
+      if (bookings.length > 0) {
+        const allBookings = readBookings();
+        allBookings.push(...bookings);
+        writeBookings(allBookings);
+        
+        console.log(`✅ 成功創建 ${bookings.length} 個重複預訂`);
+        
+        let message = `成功創建 ${bookings.length} 個重複預訂`;
+        if (conflictDates.length > 0) {
+          message += `，${conflictDates.length} 個時段因衝突未創建`;
+        }
+        
+        res.json({
+          success: true,
+          message: message,
+          bookings: bookings.map(b => ({
+            id: b.id,
+            formattedTime: moment(b.startTime).format('YYYY年MM月DD日 HH:mm') + 
+                          ' - ' + moment(b.endTime).format('HH:mm'),
+            venue: b.venueName
+          })),
+          conflictDates: conflictDates.length > 0 ? conflictDates : undefined
+        });
+      } else {
+        res.status(409).json({
+          success: false,
+          error: '所有時段都已被預訂',
+          conflictDates: conflictDates
+        });
+      }
+      
+      return;
+    }
+    
+    // 單次預訂邏輯
     // 準備預訂數據
     const bookingData = {
       venueId: parsed.venue.id,
