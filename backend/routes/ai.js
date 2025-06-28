@@ -528,12 +528,13 @@ const extractTimeFromText = (text) => {
   
   // 1. 解析具體日期 - 香港格式優先
   const datePatterns = [
-    /(\d{4})年(\d{1,2})月(\d{1,2})日/,  // 2026年6月30日
-    /(\d{1,2})月(\d{1,2})日/,           // 6月30日
-    /(\d{4})-(\d{1,2})-(\d{1,2})/,     // 2026-6-30
-    /(\d{1,2})\/(\d{1,2})\/(\d{4})/,   // 1/7/2026 (香港格式: 日/月/年)
-    /(\d{1,2})\/(\d{1,2})/,            // 1/7 (香港格式: 日/月)
-    /(\d{4})\/(\d{1,2})\/(\d{1,2})/    // 2026/6/30
+    /(\d{4})年(\d{1,2})月(\d{1,2})(?:日|號)/,  // 2026年6月30日 或 2026年6月30號
+    /(\d{1,2})月(\d{1,2})(?:日|號)/,           // 6月30日 / 6月30號
+    /(\d{4})-(\d{1,2})-(\d{1,2})/,           // 2026-6-30
+    /(\d{1,2})\/(\d{1,2})\/(\d{4})/,       // 1/7/2026 (日/月/年)
+    /(\d{1,2})\/(\d{1,2})/,                  // 1/7 (日/月)
+    /(\d{4})\/(\d{1,2})\/(\d{1,2})/,       // 2026/6/30
+    /([一二三四五六七八九十]+)月([一二三四五六七八九十]+)(?:日|號)?/ // 七月三日/七月三號
   ];
   
   // 首先處理相對時間詞彙
@@ -630,6 +631,16 @@ const extractTimeFromText = (text) => {
           }
           dateBase = moment().utcOffset('+08:00').year(year).month(month).date(day);
           console.log('📅 解析到日期:', dateBase.format('YYYY-MM-DD'));
+        } else if (match[0].includes('月') && /[一二三四五六七八九十]/.test(match[0])) {
+          // 中文數字月份/日子
+          const monthCn = match[1];
+          const dayCn = match[2];
+          const month = chineseNumberToInt(monthCn) - 1;
+          const day = chineseNumberToInt(dayCn);
+          const year = moment().utcOffset('+08:00').year();
+          console.log('📅 中文日期解析:', { year, month: month + 1, day });
+          dateBase = moment().utcOffset('+08:00').year(year).month(month).date(day);
+          console.log('📅 解析到中文日期:', dateBase.format('YYYY-MM-DD'));
         }
         
         if (dateBase.isValid()) {
@@ -851,7 +862,9 @@ const chineseNumberToInt = (str) => {
     '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
     '十一': 11, '十二': 12, '十三': 13, '十四': 14, '十五': 15,
     '十六': 16, '十七': 17, '十八': 18, '十九': 19, '二十': 20,
-    '二十一': 21, '二十二': 22, '二十三': 23, '二十四': 24
+    '二十一': 21, '二十二': 22, '二十三': 23, '二十四': 24,
+    '二十五': 25, '二十六': 26, '二十七': 27, '二十八': 28, '二十九': 29,
+    '三十': 30, '三十一': 31
   };
   
   // 直接轉換
