@@ -95,7 +95,7 @@ const createRecurringBookings = async (bookingData, recurringInfo) => {
   return bookings;
 };
 
-// 使用DeepSeek API處理自然語言 - 超級穩定版本
+// 使用DeepSeek API處理自然語言 - 終極穩定版本
 const processNaturalLanguageWithAI = async (text) => {
   console.log('🤖 開始處理用戶輸入:', text);
   
@@ -126,78 +126,80 @@ ${venueList}
 請嚴格按照以下JSON格式返回，不要有任何其他文字：
 {
   "venue": "精確的場地名稱",
-  "startTime": "YYYY-MM-DDTHH:mm:ss格式",
-  "endTime": "YYYY-MM-DDTHH:mm:ss格式",
+  "startTime": "YYYY-MM-DDTHH:mm:ss.000Z",
+  "endTime": "YYYY-MM-DDTHH:mm:ss.000Z", 
   "purpose": "預訂用途",
   "confidence": 0.9
-}
+}`;
 
-【時間解析示例】
-- "2026年6月30日下午三時至六時" → 開始"2026-06-30T15:00:00"，結束"2026-06-30T18:00:00"
-- "1/7下午3點" → "2025-07-01T15:00:00" (香港格式：1日7月)
-- "明天上午10點" → "2025-06-29T10:00:00"（如果今天是28日）
-- "下星期一早上9點" → 計算下個星期一的日期
-- "下午三點至六點" → 開始"15:00"，結束"18:00"
-
-重要：
-1. 必須準確解析年份、月份、日期
-2. 香港日期格式：D/M表示日/月，如1/7=7月1日
-3. 正確理解中文時間：三時=3點，六時=6點
-4. 下午時間需要+12小時：下午三時=15:00，下午六時=18:00
-5. 使用簡單的本地時間格式，不要加時區標識
-6. 當前基準時間：2025年6月28日，香港時區
-
-請分析用戶輸入並返回JSON結果：`;
-
-  // 超級增強的重試機制
-  let lastError = null;
+  const maxRetries = 15; // 增加到15次重試
   let response = null;
-  const maxRetries = 10; // 增加到10次重試
+  let lastError = null;
+  
+  // 創建專用的axios實例，優化網絡配置
+  const apiClient = axios.create({
+    timeout: 45000, // 降低到45秒避免長時間等待
+    headers: {
+      'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'User-Agent': 'AIBooking/2.0',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive'
+    },
+    maxRedirects: 3,
+    validateStatus: function (status) {
+      return status >= 200 && status < 300;
+    },
+    // 優化網絡連接
+    httpsAgent: new (require('https').Agent)({
+      keepAlive: true,
+      maxSockets: 50,
+      maxFreeSockets: 10,
+      timeout: 45000,
+      freeSocketTimeout: 30000
+    })
+  });
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`📡 調用DeepSeek API... (嘗試 ${attempt}/${maxRetries})`);
       
+      const apiUrl = process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions';
+      console.log(`🎯 請求URL: ${apiUrl} (${attempt === 1 ? '首次' : '重試'})`);
+      
       // 創建可取消的請求
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
-        console.log(`⏰ 請求超時，取消第${attempt}次嘗試`);
+        console.log(`⏰ 請求超時(45s)，取消第${attempt}次嘗試`);
         controller.abort();
-      }, 60000); // 增加到60秒超時
+      }, 45000);
       
-      const apiUrl = process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions';
-      console.log(`🎯 請求URL: ${apiUrl}`);
-      
-      response = await axios.post(
-        apiUrl,
-        {
-          model: "deepseek-chat",
-          messages: [
-            {
-              role: "system",
-              content: systemPrompt
-            },
-            {
-              role: "user", 
-              content: text
-            }
-          ],
-          temperature: 0.1,
-          max_tokens: 800,
-          top_p: 0.9
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'User-Agent': 'AIBooking/1.0'
+      const requestPayload = {
+        model: "deepseek-chat",
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt
           },
-          timeout: 60000, // 60秒超時
-          signal: controller.signal,
-          validateStatus: function (status) {
-            return status >= 200 && status < 300; // 只接受2xx狀態碼
+          {
+            role: "user", 
+            content: text
           }
+        ],
+        temperature: 0.1,
+        max_tokens: 600, // 稍微降低以加快響應
+        top_p: 0.9,
+        stream: false // 確保不使用流式響應
+      };
+      
+      response = await apiClient.post(
+        apiUrl,
+        requestPayload,
+        {
+          signal: controller.signal,
+          // 為這個特定請求設置更短超時
+          timeout: 40000
         }
       );
       
@@ -208,35 +210,75 @@ ${venueList}
       
     } catch (apiError) {
       lastError = apiError;
-      const errorMsg = apiError.code === 'ECONNABORTED' ? '請求超時' : 
-                      apiError.response?.status ? `HTTP ${apiError.response.status}` : 
-                      apiError.message;
       
-      console.log(`❌ DeepSeek API調用失敗 (第${attempt}/${maxRetries}次): ${errorMsg}`);
+      // 更詳細的錯誤分類
+      let errorCategory = 'unknown';
+      let errorMsg = 'unknown error';
+      let shouldRetry = true;
+      
+      if (apiError.name === 'AbortError' || apiError.code === 'ECONNABORTED') {
+        errorCategory = 'timeout';
+        errorMsg = '請求超時/被中止';
+      } else if (apiError.code === 'ENOTFOUND' || apiError.code === 'ECONNREFUSED') {
+        errorCategory = 'network';
+        errorMsg = '網絡連接失敗';
+      } else if (apiError.code === 'ETIMEDOUT') {
+        errorCategory = 'timeout';
+        errorMsg = 'TCP連接超時';
+      } else if (apiError.response) {
+        errorCategory = 'http';
+        errorMsg = `HTTP ${apiError.response.status}`;
+        // 某些HTTP錯誤不應該重試
+        if (apiError.response.status === 401 || apiError.response.status === 403) {
+          shouldRetry = false;
+        }
+      } else if (apiError.request) {
+        errorCategory = 'network';
+        errorMsg = '無服務器響應';
+      } else {
+        errorCategory = 'config';
+        errorMsg = apiError.message;
+        shouldRetry = false; // 配置錯誤通常不應重試
+      }
+      
+      console.log(`❌ DeepSeek API調用失敗 (第${attempt}/${maxRetries}次) [${errorCategory}]: ${errorMsg}`);
       
       // 詳細錯誤信息
       if (apiError.response) {
-        console.log(`📊 錯誤詳情: 狀態碼 ${apiError.response.status}, 數據:`, apiError.response.data);
-      } else if (apiError.request) {
-        console.log(`🌐 網絡錯誤: 無法連接到服務器`);
+        console.log(`📊 HTTP錯誤詳情: ${apiError.response.status} - ${JSON.stringify(apiError.response.data).substring(0, 200)}`);
       } else {
-        console.log(`⚙️ 請求配置錯誤: ${apiError.message}`);
+        console.log(`🔧 錯誤代碼: ${apiError.code}, 消息: ${apiError.message}`);
+      }
+      
+      // 如果不應該重試，直接跳出
+      if (!shouldRetry) {
+        console.log(`🚫 錯誤類型不適合重試，直接使用後備邏輯`);
+        break;
       }
       
       if (attempt < maxRetries) {
-        // 漸進式退避算法：指數增長 + 隨機抖動
-        const baseDelay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // 最大10秒
+        // 根據錯誤類型調整延遲策略
+        let baseDelay;
+        if (errorCategory === 'timeout') {
+          baseDelay = Math.min(2000 * Math.pow(1.5, attempt - 1), 8000); // 超時錯誤用較短延遲
+        } else if (errorCategory === 'network') {
+          baseDelay = Math.min(3000 * Math.pow(2, attempt - 1), 12000); // 網絡錯誤用較長延遲
+        } else {
+          baseDelay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // 默認延遲
+        }
+        
         const jitter = Math.random() * 1000; // 隨機抖動0-1秒
         const delay = baseDelay + jitter;
         
-        console.log(`⏳ 等待 ${Math.round(delay)}ms 後重試... (指數退避 + 抖動)`);
+        console.log(`⏳ 等待 ${Math.round(delay)}ms 後重試... (${errorCategory}錯誤策略)`);
         await new Promise(resolve => setTimeout(resolve, delay));
       } else {
-        console.error(`💥 所有 ${maxRetries} 次重試都失敗，錯誤詳情:`, {
-          lastErrorMessage: lastError?.message,
-          lastErrorCode: lastError?.code,
-          lastHttpStatus: lastError?.response?.status,
-          apiKey: process.env.DEEPSEEK_API_KEY ? '已配置' : '未配置',
+        console.error(`💥 所有 ${maxRetries} 次重試都失敗，最終錯誤:`, {
+          category: errorCategory,
+          message: lastError?.message,
+          code: lastError?.code,
+          httpStatus: lastError?.response?.status,
+          apiKey: process.env.DEEPSEEK_API_KEY ? '已配置' : '❌未配置',
           apiUrl: process.env.DEEPSEEK_API_URL || '使用默認URL'
         });
       }
@@ -244,8 +286,8 @@ ${venueList}
   }
   
   if (!response) {
-    console.error('❌ DeepSeek API 徹底失敗:', lastError?.message);
-    console.log('🔄 切換到後備處理邏輯');
+    console.error('❌ DeepSeek API 徹底失敗，切換到後備模式');
+    console.log('🔄 使用後備處理邏輯');
     return await enhancedFallbackProcessing(text);
   }
   
