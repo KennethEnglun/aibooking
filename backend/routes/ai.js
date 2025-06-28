@@ -108,18 +108,22 @@ ${venueList}
 請嚴格按照以下JSON格式返回，不要有任何其他文字：
 {
   "venue": "精確的場地名稱",
-  "startTime": "YYYY-MM-DDTHH:mm:ss.SSS+08:00格式",
-  "endTime": "YYYY-MM-DDTHH:mm:ss.SSS+08:00格式",
+  "startTime": "YYYY-MM-DDTHH:mm:ss格式",
+  "endTime": "YYYY-MM-DDTHH:mm:ss格式",
   "purpose": "預訂用途",
   "confidence": 0.9
 }
 
 【時間解析示例】
-- "2025年6月30日下午四點" → "2025-06-30T16:00:00.000+08:00"
-- "明天上午10點" → "2025-06-29T10:00:00.000+08:00"（如果今天是28日）
+- "2026年6月30日下午三時至六時" → 開始"2026-06-30T15:00:00"，結束"2026-06-30T18:00:00"
+- "明天上午10點" → "2025-06-29T10:00:00"（如果今天是28日）
 - "下午三點至六點" → 開始"15:00"，結束"18:00"
 
-重要：時間必須使用中國時區格式(+08:00)，不要使用UTC時間！
+重要：
+1. 必須準確解析年份、月份、日期
+2. 正確理解中文時間：三時=3點，六時=6點
+3. 下午時間需要+12小時：下午三時=15:00，下午六時=18:00
+4. 使用簡單的本地時間格式，不要加時區標識
 
 請分析用戶輸入並返回JSON結果：`;
 
@@ -184,32 +188,39 @@ ${venueList}
         }
       }
       
-      // 智能時間解析和驗證
-      let startTime = parsed.startTime;
-      let endTime = parsed.endTime;
+      // 🔧 優先使用本地時間解析，避免AI的時間解析錯誤
+      console.log('🔧 開始智能時間處理...');
+      let startTime = null;
+      let endTime = null;
       
-      if (startTime && !moment(startTime).isValid()) {
-        console.log('⚠️ AI返回的開始時間無效，嘗試重新解析');
-        const timeResult = extractTimeFromText(text);
-        startTime = timeResult.startTime;
-        endTime = timeResult.endTime;
-      } else if (startTime && moment(startTime).isValid()) {
-        // 🔧 完全避免時區問題：使用簡化的本地時間格式
-        if (startTime.includes('Z') || startTime.includes('+00:00') || startTime.includes('+08:00')) {
-          console.log('🔧 檢測到時區時間，轉換為簡化本地格式');
-          // 解析時間並提取小時、分鐘，忽略日期和時區
-          const startMoment = moment(startTime);
-          const endMoment = moment(endTime);
-          
-          // 使用今天的日期，但保持原有的小時和分鐘
-          const today = moment();
-          const localStart = today.clone().hour(startMoment.hour()).minute(startMoment.minute()).second(0);
-          const localEnd = today.clone().hour(endMoment.hour()).minute(endMoment.minute()).second(0);
-          
-          startTime = localStart.format('YYYY-MM-DDTHH:mm:ss');
-          endTime = localEnd.format('YYYY-MM-DDTHH:mm:ss');
-          console.log('✅ 時間簡化完成:', { startTime, endTime });
+      // 1. 優先使用本地時間解析
+      const localTimeResult = extractTimeFromText(text);
+      if (localTimeResult.startTime && localTimeResult.endTime) {
+        console.log('✅ 本地時間解析成功，使用本地結果');
+        startTime = localTimeResult.startTime;
+        endTime = localTimeResult.endTime;
+      } else if (parsed.startTime && parsed.endTime) {
+        // 2. 如果本地解析失敗，使用AI結果但進行驗證
+        console.log('🤖 使用AI時間解析結果');
+        const aiStartMoment = moment(parsed.startTime);
+        const aiEndMoment = moment(parsed.endTime);
+        
+        if (aiStartMoment.isValid() && aiEndMoment.isValid()) {
+          startTime = aiStartMoment.format('YYYY-MM-DDTHH:mm:ss');
+          endTime = aiEndMoment.format('YYYY-MM-DDTHH:mm:ss');
+          console.log('✅ AI時間解析有效:', { startTime, endTime });
+        } else {
+          console.log('⚠️ AI時間解析無效，使用默認邏輯');
+          // 使用默認的2小時預訂
+          const now = moment();
+          startTime = now.format('YYYY-MM-DDTHH:mm:ss');
+          endTime = now.add(2, 'hours').format('YYYY-MM-DDTHH:mm:ss');
         }
+      } else {
+        console.log('⚠️ 所有時間解析都失敗，使用默認時間');
+        const now = moment();
+        startTime = now.format('YYYY-MM-DDTHH:mm:ss');
+        endTime = now.add(2, 'hours').format('YYYY-MM-DDTHH:mm:ss');
       }
       
       const result = {
@@ -289,12 +300,13 @@ const extractTimeFromText = (text) => {
   let endTime = null;
   let dateBase = moment();
   
-  // 1. 解析具體日期
+  // 1. 解析具體日期 - 加強版
   const datePatterns = [
-    /(\d{4})年(\d{1,2})月(\d{1,2})日/,  // 2025年6月30日
+    /(\d{4})年(\d{1,2})月(\d{1,2})日/,  // 2026年6月30日
     /(\d{1,2})月(\d{1,2})日/,           // 6月30日
-    /(\d{4})-(\d{1,2})-(\d{1,2})/,     // 2025-6-30
-    /(\d{1,2})\/(\d{1,2})\/(\d{4})/    // 6/30/2025
+    /(\d{4})-(\d{1,2})-(\d{1,2})/,     // 2026-6-30
+    /(\d{1,2})\/(\d{1,2})\/(\d{4})/,   // 6/30/2026
+    /(\d{4})\/(\d{1,2})\/(\d{1,2})/    // 2026/6/30
   ];
   
   for (const pattern of datePatterns) {
@@ -302,15 +314,36 @@ const extractTimeFromText = (text) => {
     if (match) {
       try {
         if (match[0].includes('年')) {
-          dateBase = moment(`${match[1]}-${match[2]}-${match[3]}`, 'YYYY-M-D');
+          const year = parseInt(match[1]);
+          const month = parseInt(match[2]) - 1; // moment月份從0開始
+          const day = parseInt(match[3]);
+          dateBase = moment().year(year).month(month).date(day);
+          console.log('📅 解析到完整日期:', dateBase.format('YYYY-MM-DD'));
         } else if (match[0].includes('月')) {
-          dateBase = moment().year(new Date().getFullYear()).month(parseInt(match[1]) - 1).date(parseInt(match[2]));
-        } else if (match[0].includes('-')) {
-          dateBase = moment(`${match[1]}-${match[2]}-${match[3]}`, 'YYYY-M-D');
+          const month = parseInt(match[1]) - 1;
+          const day = parseInt(match[2]);
+          dateBase = moment().month(month).date(day);
+          console.log('📅 解析到月日:', dateBase.format('YYYY-MM-DD'));
+        } else if (match[0].includes('-') || match[0].includes('/')) {
+          let year, month, day;
+          if (match[0].includes('-')) {
+            year = parseInt(match[1]);
+            month = parseInt(match[2]) - 1;
+            day = parseInt(match[3]);
+          } else if (match[4]) { // 格式: M/D/YYYY
+            month = parseInt(match[1]) - 1;
+            day = parseInt(match[2]);
+            year = parseInt(match[3]);
+          } else { // 格式: YYYY/M/D
+            year = parseInt(match[1]);
+            month = parseInt(match[2]) - 1;
+            day = parseInt(match[3]);
+          }
+          dateBase = moment().year(year).month(month).date(day);
+          console.log('📅 解析到數字日期:', dateBase.format('YYYY-MM-DD'));
         }
         
         if (dateBase.isValid()) {
-          console.log('📅 解析到日期:', dateBase.format('YYYY-MM-DD'));
           break;
         }
       } catch (e) {
@@ -319,11 +352,14 @@ const extractTimeFromText = (text) => {
     }
   }
   
-  // 2. 解析時間範圍
+  // 2. 解析時間範圍 - 增強版
   const timeRangePatterns = [
-    /(下午|上午|中午|晚上|早上)([一二三四五六七八九十\d]+)點([一二三四五六七八九十\d]+)?分?[至到]([一二三四五六七八九十\d]+)點([一二三四五六七八九十\d]+)?分?/,
-    /([一二三四五六七八九十\d]+)點([一二三四五六七八九十\d]+)?分?[至到]([一二三四五六七八九十\d]+)點([一二三四五六七八九十\d]+)?分?/,
-    /(下午|上午|中午|晚上|早上)([一二三四五六七八九十\d]+)[點時]/
+    // 支持"時"字
+    /(下午|上午|中午|晚上|早上)([一二三四五六七八九十\d]+)[時點]([一二三四五六七八九十\d]+)?分?[至到]([一二三四五六七八九十\d]+)[時點]([一二三四五六七八九十\d]+)?分?/,
+    /(下午|上午|中午|晚上|早上)([一二三四五六七八九十\d]+)[時點]([一二三四五六七八九十\d]+)?分?[至到](下午|上午|中午|晚上|早上)?([一二三四五六七八九十\d]+)[時點]([一二三四五六七八九十\d]+)?分?/,
+    // 原有格式
+    /([一二三四五六七八九十\d]+)[時點]([一二三四五六七八九十\d]+)?分?[至到]([一二三四五六七八九十\d]+)[時點]([一二三四五六七八九十\d]+)?分?/,
+    /(下午|上午|中午|晚上|早上)([一二三四五六七八九十\d]+)[時點]/
   ];
   
   for (const pattern of timeRangePatterns) {
@@ -334,28 +370,82 @@ const extractTimeFromText = (text) => {
         let startMinute = 0;
         let endHour = 0;
         let endMinute = 0;
+        let startPeriod = '';
+        let endPeriod = '';
+        
+        console.log('🔍 時間匹配結果:', match);
         
         if (match[0].includes('至') || match[0].includes('到')) {
           // 時間範圍
-          const period = match[1];
-          startHour = chineseNumberToInt(match[2]);
-          startMinute = match[3] ? chineseNumberToInt(match[3]) : 0;
-          endHour = chineseNumberToInt(match[4]);
-          endMinute = match[5] ? chineseNumberToInt(match[5]) : 0;
+          console.log('📝 詳細匹配信息:', {
+            fullMatch: match[0],
+            group1: match[1],
+            group2: match[2], 
+            group3: match[3],
+            group4: match[4],
+            group5: match[5],
+            group6: match[6]
+          });
           
-          if (period && (period.includes('下午') || period.includes('晚上')) && startHour < 12) {
+          if (match.length >= 7 && match[5] && match[4]) {
+            // 格式: 下午三時至上午六時 或 下午三時至晚上六時
+            startPeriod = match[1] || '';
+            startHour = chineseNumberToInt(match[2]);
+            startMinute = match[3] ? chineseNumberToInt(match[3]) : 0;
+            endPeriod = match[4]; // 明確的結束時段
+            endHour = chineseNumberToInt(match[5]);
+            endMinute = match[6] ? chineseNumberToInt(match[6]) : 0;
+          } else {
+            // 格式: 下午三時至六時
+            startPeriod = match[1] || '';
+            startHour = chineseNumberToInt(match[2]);
+            startMinute = match[3] ? chineseNumberToInt(match[3]) : 0;
+            endHour = chineseNumberToInt(match[4]);
+            endMinute = match[5] ? chineseNumberToInt(match[5]) : 0;
+            endPeriod = startPeriod; // 使用相同時段
+            
+            console.log('📋 基本解析:', { startPeriod, startHour, endHour, endPeriod });
+          }
+          
+          // 處理時段轉換
+          console.log('🕐 時段轉換前:', { startPeriod, endPeriod, startHour, endHour });
+          
+          if (startPeriod && (startPeriod.includes('下午') || startPeriod.includes('晚上')) && startHour < 12) {
             startHour += 12;
+            console.log('🕐 開始時間轉換為下午:', startHour);
           }
-          if (period && (period.includes('下午') || period.includes('晚上')) && endHour < 12) {
+          if (endPeriod && (endPeriod.includes('下午') || endPeriod.includes('晚上')) && endHour < 12) {
             endHour += 12;
+            console.log('🕐 結束時間轉換為下午:', endHour);
           }
+          
+          // 如果沒有明確指定結束時段，但開始時段是下午，結束時間也應該是下午
+          if (startPeriod && (startPeriod.includes('下午') || startPeriod.includes('晚上')) && !endPeriod && endHour < 12) {
+            endHour += 12;
+            console.log('🕐 結束時間自動轉換為下午:', endHour);
+          }
+          
+          // 特殊處理：如果結束時間仍然小於開始時間
+          if (endHour <= startHour) {
+            console.log('⚠️ 結束時間小於等於開始時間，調整中...');
+            if (startHour >= 12) {
+              // 可能需要跨日
+              if (endHour + 12 > startHour) {
+                endHour += 12;
+                console.log('🕐 結束時間調整為:', endHour);
+              }
+            }
+          }
+          
+          console.log('🕐 最終時間:', { startHour, endHour });
+          
         } else {
           // 單一時間
-          const period = match[1];
+          startPeriod = match[1] || '';
           startHour = chineseNumberToInt(match[2]);
           startMinute = match[3] ? chineseNumberToInt(match[3]) : 0;
           
-          if (period && (period.includes('下午') || period.includes('晚上')) && startHour < 12) {
+          if (startPeriod && (startPeriod.includes('下午') || startPeriod.includes('晚上')) && startHour < 12) {
             startHour += 12;
           }
           
@@ -364,11 +454,11 @@ const extractTimeFromText = (text) => {
           endMinute = startMinute;
         }
         
-        // 🔧 修復時區問題：使用本地時間格式而不是UTC
+        // 創建時間對象
         const startMoment = dateBase.clone().hour(startHour).minute(startMinute).second(0);
         const endMoment = dateBase.clone().hour(endHour).minute(endMinute).second(0);
         
-        // 使用本地時間格式，避免時區轉換問題
+        // 使用簡單的本地時間格式
         startTime = startMoment.format('YYYY-MM-DDTHH:mm:ss');
         endTime = endMoment.format('YYYY-MM-DDTHH:mm:ss');
         
@@ -414,15 +504,33 @@ const extractPurposeFromText = (text) => {
   return '場地使用';
 };
 
-// 中文數字轉換
+// 中文數字轉換 - 增強版
 const chineseNumberToInt = (str) => {
+  if (!str) return 0;
+  
   const chineseToNumber = {
     '一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
     '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
-    '十一': 11, '十二': 12
+    '十一': 11, '十二': 12, '十三': 13, '十四': 14, '十五': 15,
+    '十六': 16, '十七': 17, '十八': 18, '十九': 19, '二十': 20,
+    '二十一': 21, '二十二': 22, '二十三': 23, '二十四': 24
   };
   
-  return chineseToNumber[str] || parseInt(str) || 0;
+  // 直接轉換
+  if (chineseToNumber[str]) {
+    console.log(`🔢 中文數字轉換: ${str} → ${chineseToNumber[str]}`);
+    return chineseToNumber[str];
+  }
+  
+  // 嘗試解析阿拉伯數字
+  const num = parseInt(str);
+  if (!isNaN(num)) {
+    console.log(`🔢 阿拉伯數字: ${str} → ${num}`);
+    return num;
+  }
+  
+  console.log(`⚠️ 無法轉換數字: ${str}`);
+  return 0;
 };
 
 // 增強的後備處理邏輯
