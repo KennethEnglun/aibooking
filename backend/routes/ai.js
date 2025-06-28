@@ -5,6 +5,7 @@ const { findVenueByName, getAllVenues } = require('../config/venues');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const storage = require('../data/storage');
 
 // 確保環境變量被正確加載
 require('dotenv').config();
@@ -18,18 +19,19 @@ console.log('🔑 DEEPSEEK_API_KEY:', process.env.DEEPSEEK_API_KEY ? '已配置'
 console.log('🌐 DEEPSEEK_API_URL:', process.env.DEEPSEEK_API_URL || '使用默認');
 console.log('🎯 NODE_ENV:', process.env.NODE_ENV || 'development');
 
-// 直接讀取/寫入預訂數據的輔助函數
+// 統一使用storage模塊的輔助函數
 const readBookings = () => {
-  try {
-    const data = fs.readFileSync(bookingsFile, 'utf8');
-    return JSON.parse(data);
-  } catch (error) {
-    return [];
-  }
+  return storage.loadBookings();
 };
 
 const writeBookings = (bookings) => {
-  fs.writeFileSync(bookingsFile, JSON.stringify(bookings, null, 2));
+  // 使用storage模塊重新保存所有預訂
+  return storage.saveBookings(bookings);
+};
+
+const addSingleBooking = (booking) => {
+  // 添加單個預訂
+  return storage.addBooking(booking);
 };
 
 // 檢查時間衝突的函數
@@ -1170,9 +1172,10 @@ router.post('/book', async (req, res) => {
       
       // 保存所有預訂
       if (bookings.length > 0) {
-        const allBookings = readBookings();
-        allBookings.push(...bookings);
-        writeBookings(allBookings);
+        // 使用storage模塊逐個添加預訂
+        for (const booking of bookings) {
+          addSingleBooking(booking);
+        }
         
         console.log(`✅ 成功創建 ${bookings.length} 個重複預訂`);
         
@@ -1239,7 +1242,10 @@ router.post('/book', async (req, res) => {
       }
       
       if (successfulBookings.length > 0) {
-        writeBookings(existingBookings);
+        // 使用storage模塊保存重複預訂
+        for (const booking of successfulBookings) {
+          addSingleBooking(booking);
+        }
         
         res.json({
           success: true,
@@ -1274,8 +1280,7 @@ router.post('/book', async (req, res) => {
         recurring: false
       };
       
-      existingBookings.push(newBooking);
-      writeBookings(existingBookings);
+      addSingleBooking(newBooking);
       
       res.json({
         success: true,

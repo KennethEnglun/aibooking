@@ -5,7 +5,7 @@ import moment from 'moment';
 
 // 配置axios基礎URL
 const api = axios.create({
-  baseURL: process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5001',
+  baseURL: process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5000',
   timeout: 10000
 });
 

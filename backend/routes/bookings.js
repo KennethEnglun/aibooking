@@ -3,7 +3,7 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const moment = require('moment');
 const storage = require('../data/storage');
-const venues = require('../config/venues');
+const { getAllVenues } = require('../config/venues');
 
 // 獲取所有預訂
 router.get('/', (req, res) => {
@@ -84,7 +84,8 @@ router.post('/', (req, res) => {
     }
     
     // 驗證場地是否存在
-    const venueExists = venues.some(v => v.id === venue);
+    const allVenues = getAllVenues();
+    const venueExists = allVenues.some(v => v.id === venue);
     if (!venueExists) {
       return res.status(400).json({
         success: false,
@@ -234,10 +235,11 @@ router.delete('/:id', (req, res) => {
 // 獲取場地列表
 router.get('/venues', (req, res) => {
   try {
+    const allVenues = getAllVenues();
     res.json({
       success: true,
-      data: venues,
-      count: venues.length
+      data: allVenues,
+      count: allVenues.length
     });
   } catch (error) {
     console.error('❌ 獲取場地列表失敗:', error);
