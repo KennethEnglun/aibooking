@@ -401,10 +401,15 @@ ${venueList}
 
 // 解析重複預訂信息
 const extractRecurringInfo = (text) => {
+  // 若句子含有 "下星期"、"下週" 等相對時間詞，視為單次預訂
+  const relativeWeekKeywords = /(下星期|下週|本星期|這星期|這週|今星期|今週)/;
+  if (relativeWeekKeywords.test(text)) {
+    return { isRecurring: false };
+  }
+
   const recurringPatterns = [
     { pattern: /逢(星期|週)([一二三四五六日天])/g, type: 'weekly' },
     { pattern: /每(星期|週)([一二三四五六日天])/g, type: 'weekly' },
-    { pattern: /(星期|週)([一二三四五六日天]).*每?週?/g, type: 'weekly' },
     { pattern: /每(個)?月/g, type: 'monthly' },
     { pattern: /逢月/g, type: 'monthly' },
     { pattern: /每天/g, type: 'daily' },
