@@ -59,6 +59,15 @@ const createRecurringBookings = async (bookingData, recurringInfo) => {
   const endDate = moment(bookingData.endTime);
   let currentDate = startDate.clone();
   
+  // 若為每週重複，並提供 dayOfWeek，將 currentDate 調整到最近一次該星期
+  if (recurringInfo.type === 'weekly' && recurringInfo.dayOfWeek !== null) {
+    const targetDay = recurringInfo.dayOfWeek; // 0 (日)~6 (六)
+    const currentDay = currentDate.day();
+    let daysToAdd = (targetDay - currentDay + 7) % 7;
+    if (daysToAdd === 0) daysToAdd = 7; // 總是排到下一週
+    currentDate.add(daysToAdd, 'days');
+  }
+  
   // 生成未來12週的重複預訂（可根據需要調整）
   const maxOccurrences = 12;
   
@@ -449,14 +458,13 @@ const generateRecurringDates = (startTime, endTime, recurringInfo, maxOccurrence
   
   let currentDate = startMoment.clone();
   
-  // 如果是每週重複，調整到指定的星期幾
+  // 若為每週重複，並提供 dayOfWeek，將 currentDate 調整到最近一次該星期
   if (recurringInfo.type === 'weekly' && recurringInfo.dayOfWeek !== null) {
-    const targetDay = recurringInfo.dayOfWeek;
+    const targetDay = recurringInfo.dayOfWeek; // 0 (日)~6 (六)
     const currentDay = currentDate.day();
-    const daysToAdd = (targetDay - currentDay + 7) % 7;
-    if (daysToAdd > 0) {
-      currentDate.add(daysToAdd, 'days');
-    }
+    let daysToAdd = (targetDay - currentDay + 7) % 7;
+    if (daysToAdd === 0) daysToAdd = 7; // 總是排到下一週
+    currentDate.add(daysToAdd, 'days');
   }
   
   for (let i = 0; i < maxOccurrences; i++) {
@@ -665,7 +673,8 @@ const extractTimeFromText = (text) => {
     /(下午|上午|中午|晚上|早上)([一二三四五六七八九十\d]+)[點時]([一二三四五六七八九十\d]+)?分?[至到](下午|上午|中午|晚上|早上)?([一二三四五六七八九十\d]+)[點時]([一二三四五六七八九十\d]+)?分?/,
     // 單一時間
     /(下午|上午|中午|晚上|早上)([一二三四五六七八九十\d]+)[點時]([一二三四五六七八九十\d]+)?分?/,
-    /([一二三四五六七八九十\d]+)[點時]([一二三四五六七八九十\d]+)?分?/
+    /([一二三四五六七八九十\d]+)[點時]([一二三四五六七八九十\d]+)?分?/,
+    /(\d{1,2}):(\d{2})\s?[\-至到]\s?(\d{1,2}):(\d{2})/,
   ];
   
   for (const pattern of timeRangePatterns) {
@@ -804,6 +813,30 @@ const extractTimeFromText = (text) => {
           startTime: startTime,
           endTime: endTime
         });
+        
+        // --------------- 數字時間格式 HH:MM - HH:MM ---------------
+        if (pattern.source.includes('\\d{1,2}:')) {
+          const sHour = parseInt(match[1]);
+          const sMin  = parseInt(match[2]);
+          const eHour = parseInt(match[3]);
+          const eMin  = parseInt(match[4]);
+
+          let adjustedEndHour = eHour;
+          if (eHour < sHour || (eHour === sHour && eMin <= sMin)) {
+            adjustedEndHour += 24; // 跨日
+          }
+
+          const startMoment = dateBase.clone().hour(sHour).minute(sMin).second(0);
+          let endMoment = dateBase.clone().hour(adjustedEndHour % 24).minute(eMin).second(0);
+          if (adjustedEndHour >= 24) endMoment = endMoment.add(1, 'day');
+
+          startTime = startMoment.format('YYYY-MM-DDTHH:mm:ss');
+          endTime   = endMoment.format('YYYY-MM-DDTHH:mm:ss');
+
+          console.log('🕐 數字時間範圍解析:', { startTime, endTime });
+          break;
+        }
+        
         break;
         
       } catch (e) {
@@ -812,24 +845,6 @@ const extractTimeFromText = (text) => {
     }
   }
   
-  // 若未偵測到時間則判斷是否為全天或使用預設時間
-  if (!startTime) {
-    const fullDayKeywords = ['全日', '全天', '整天', '一整天'];
-    const isFullDay = fullDayKeywords.some(k => text.includes(k));
-
-    if (isFullDay || !timeRangePatterns.some(p => p.test(text))) {
-      // 全日預訂
-      startTime = dateBase.clone().startOf('day').format('YYYY-MM-DDTHH:mm:ss');
-      endTime   = dateBase.clone().endOf('day').format('YYYY-MM-DDTHH:mm:ss');
-      console.log('🌙 偵測為全天預訂:', { startTime, endTime });
-    } else {
-      // 預設 2 小時區段（09:00-11:00）
-      startTime = dateBase.clone().hour(9).minute(0).second(0).format('YYYY-MM-DDTHH:mm:ss');
-      endTime   = dateBase.clone().hour(11).minute(0).second(0).format('YYYY-MM-DDTHH:mm:ss');
-      console.log('⌛ 未提供時間，使用預設 09:00-11:00:', { startTime, endTime });
-    }
-  }
-
   return { startTime, endTime };
 };
 
