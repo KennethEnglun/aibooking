@@ -100,9 +100,11 @@ ${venueList}
 
 【理解規則】
 1. 場地：識別用戶提到的場地名稱，支持簡稱（如"音樂"指"音樂室"）
-2. 時間：支持多種中文時間表達方式，使用中國時區(+08:00)
+2. 時間：支持多種中文時間表達方式，使用香港時區(+08:00)
 3. 用途：識別預訂目的
 4. 時長：如果只說開始時間，默認2小時；如果說"至"某時間，計算實際時長
+5. 日期格式：香港格式日/月，如"1/7"表示7月1日，"15/3"表示3月15日
+6. 相對時間：準確理解"明天"、"後天"、"下星期一"等詞彙，基準時間為香港時區
 
 【輸出格式】
 請嚴格按照以下JSON格式返回，不要有任何其他文字：
@@ -116,14 +118,18 @@ ${venueList}
 
 【時間解析示例】
 - "2026年6月30日下午三時至六時" → 開始"2026-06-30T15:00:00"，結束"2026-06-30T18:00:00"
+- "1/7下午3點" → "2025-07-01T15:00:00" (香港格式：1日7月)
 - "明天上午10點" → "2025-06-29T10:00:00"（如果今天是28日）
+- "下星期一早上9點" → 計算下個星期一的日期
 - "下午三點至六點" → 開始"15:00"，結束"18:00"
 
 重要：
 1. 必須準確解析年份、月份、日期
-2. 正確理解中文時間：三時=3點，六時=6點
-3. 下午時間需要+12小時：下午三時=15:00，下午六時=18:00
-4. 使用簡單的本地時間格式，不要加時區標識
+2. 香港日期格式：D/M表示日/月，如1/7=7月1日
+3. 正確理解中文時間：三時=3點，六時=6點
+4. 下午時間需要+12小時：下午三時=15:00，下午六時=18:00
+5. 使用簡單的本地時間格式，不要加時區標識
+6. 當前基準時間：2025年6月28日，香港時區
 
 請分析用戶輸入並返回JSON結果：`;
 
@@ -210,17 +216,17 @@ ${venueList}
           endTime = aiEndMoment.format('YYYY-MM-DDTHH:mm:ss');
           console.log('✅ AI時間解析有效:', { startTime, endTime });
         } else {
-          console.log('⚠️ AI時間解析無效，使用默認邏輯');
-          // 使用默認的2小時預訂
-          const now = moment();
-          startTime = now.format('YYYY-MM-DDTHH:mm:ss');
-          endTime = now.add(2, 'hours').format('YYYY-MM-DDTHH:mm:ss');
+                     console.log('⚠️ AI時間解析無效，使用默認邏輯');
+           // 使用默認的2小時預訂
+           const now = moment().utcOffset('+08:00'); // 香港時區
+           startTime = now.format('YYYY-MM-DDTHH:mm:ss');
+           endTime = now.add(2, 'hours').format('YYYY-MM-DDTHH:mm:ss');
         }
       } else {
-        console.log('⚠️ 所有時間解析都失敗，使用默認時間');
-        const now = moment();
-        startTime = now.format('YYYY-MM-DDTHH:mm:ss');
-        endTime = now.add(2, 'hours').format('YYYY-MM-DDTHH:mm:ss');
+                 console.log('⚠️ 所有時間解析都失敗，使用默認時間');
+         const now = moment().utcOffset('+08:00'); // 香港時區
+         startTime = now.format('YYYY-MM-DDTHH:mm:ss');
+         endTime = now.add(2, 'hours').format('YYYY-MM-DDTHH:mm:ss');
       }
       
       const result = {
@@ -300,15 +306,69 @@ const extractTimeFromText = (text) => {
   let endTime = null;
   let dateBase = moment();
   
-  // 1. 解析具體日期 - 加強版
+  // 1. 解析具體日期 - 香港格式優先
   const datePatterns = [
     /(\d{4})年(\d{1,2})月(\d{1,2})日/,  // 2026年6月30日
     /(\d{1,2})月(\d{1,2})日/,           // 6月30日
     /(\d{4})-(\d{1,2})-(\d{1,2})/,     // 2026-6-30
-    /(\d{1,2})\/(\d{1,2})\/(\d{4})/,   // 6/30/2026
+    /(\d{1,2})\/(\d{1,2})\/(\d{4})/,   // 1/7/2026 (香港格式: 日/月/年)
+    /(\d{1,2})\/(\d{1,2})/,            // 1/7 (香港格式: 日/月)
     /(\d{4})\/(\d{1,2})\/(\d{1,2})/    // 2026/6/30
   ];
   
+  // 首先處理相對時間詞彙
+  const relativeTimePatterns = {
+    '今天': 0,
+    '今日': 0,
+    '明天': 1,
+    '明日': 1,
+    '後天': 2,
+    '後日': 2,
+    '大後天': 3,
+    '下星期一': 'next_monday',
+    '下週一': 'next_monday',
+    '下星期二': 'next_tuesday', 
+    '下週二': 'next_tuesday',
+    '下星期三': 'next_wednesday',
+    '下週三': 'next_wednesday',
+    '下星期四': 'next_thursday',
+    '下週四': 'next_thursday',
+    '下星期五': 'next_friday',
+    '下週五': 'next_friday',
+    '下星期六': 'next_saturday',
+    '下週六': 'next_saturday',
+    '下星期日': 'next_sunday',
+    '下週日': 'next_sunday'
+  };
+  
+  // 設置香港時區基準時間
+  dateBase = moment().utcOffset('+08:00'); // 香港時區
+  
+  // 檢查相對時間詞彙
+  for (const [keyword, offset] of Object.entries(relativeTimePatterns)) {
+    if (text.includes(keyword)) {
+      if (typeof offset === 'number') {
+        dateBase = dateBase.add(offset, 'days');
+        console.log(`📅 相對時間解析: ${keyword} → ${dateBase.format('YYYY-MM-DD')}`);
+        break;
+      } else if (offset.startsWith('next_')) {
+        const dayName = offset.replace('next_', '');
+        const dayMapping = {
+          'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4,
+          'friday': 5, 'saturday': 6, 'sunday': 0
+        };
+        const targetDay = dayMapping[dayName];
+        const currentDay = dateBase.day();
+        let daysToAdd = (targetDay + 7 - currentDay) % 7;
+        if (daysToAdd === 0) daysToAdd = 7; // 如果是同一天，則為下星期
+        dateBase = dateBase.add(daysToAdd, 'days');
+        console.log(`📅 相對時間解析: ${keyword} → ${dateBase.format('YYYY-MM-DD')}`);
+        break;
+      }
+    }
+  }
+
+  // 然後處理具體日期
   for (const pattern of datePatterns) {
     const match = text.match(pattern);
     if (match) {
@@ -317,30 +377,39 @@ const extractTimeFromText = (text) => {
           const year = parseInt(match[1]);
           const month = parseInt(match[2]) - 1; // moment月份從0開始
           const day = parseInt(match[3]);
-          dateBase = moment().year(year).month(month).date(day);
+          dateBase = moment().utcOffset('+08:00').year(year).month(month).date(day);
           console.log('📅 解析到完整日期:', dateBase.format('YYYY-MM-DD'));
         } else if (match[0].includes('月')) {
           const month = parseInt(match[1]) - 1;
           const day = parseInt(match[2]);
-          dateBase = moment().month(month).date(day);
+          dateBase = moment().utcOffset('+08:00').month(month).date(day);
           console.log('📅 解析到月日:', dateBase.format('YYYY-MM-DD'));
-        } else if (match[0].includes('-') || match[0].includes('/')) {
-          let year, month, day;
-          if (match[0].includes('-')) {
-            year = parseInt(match[1]);
-            month = parseInt(match[2]) - 1;
-            day = parseInt(match[3]);
-          } else if (match[4]) { // 格式: M/D/YYYY
-            month = parseInt(match[1]) - 1;
-            day = parseInt(match[2]);
-            year = parseInt(match[3]);
-          } else { // 格式: YYYY/M/D
-            year = parseInt(match[1]);
-            month = parseInt(match[2]) - 1;
-            day = parseInt(match[3]);
-          }
-          dateBase = moment().year(year).month(month).date(day);
+        } else if (match[0].includes('-')) {
+          const year = parseInt(match[1]);
+          const month = parseInt(match[2]) - 1;
+          const day = parseInt(match[3]);
+          dateBase = moment().utcOffset('+08:00').year(year).month(month).date(day);
           console.log('📅 解析到數字日期:', dateBase.format('YYYY-MM-DD'));
+        } else if (match[0].includes('/')) {
+          let year, month, day;
+          if (match[4]) { // 格式: D/M/YYYY (香港格式: 日/月/年)
+            day = parseInt(match[1]);
+            month = parseInt(match[2]) - 1;
+            year = parseInt(match[3]);
+            console.log('📅 香港格式 D/M/YYYY:', { day, month: month + 1, year });
+          } else if (match[3]) { // 格式: YYYY/M/D
+            year = parseInt(match[1]);
+            month = parseInt(match[2]) - 1;
+            day = parseInt(match[3]);
+            console.log('📅 ISO格式 YYYY/M/D:', { year, month: month + 1, day });
+          } else { // 格式: D/M (香港格式: 日/月，使用當前年份)
+            day = parseInt(match[1]);
+            month = parseInt(match[2]) - 1;
+            year = moment().utcOffset('+08:00').year();
+            console.log('📅 香港格式 D/M:', { day, month: month + 1, year });
+          }
+          dateBase = moment().utcOffset('+08:00').year(year).month(month).date(day);
+          console.log('📅 解析到日期:', dateBase.format('YYYY-MM-DD'));
         }
         
         if (dateBase.isValid()) {
@@ -377,15 +446,15 @@ const extractTimeFromText = (text) => {
         
         if (match[0].includes('至') || match[0].includes('到')) {
           // 時間範圍
-          console.log('📝 詳細匹配信息:', {
-            fullMatch: match[0],
-            group1: match[1],
-            group2: match[2], 
-            group3: match[3],
-            group4: match[4],
-            group5: match[5],
-            group6: match[6]
-          });
+                      console.log('📝 詳細匹配信息:', {
+              fullMatch: match[0],
+              group1: match[1], // 時段 (下午)
+              group2: match[2], // 開始小時 (三)
+              group3: match[3], // 開始分鐘
+              group4: match[4], // 結束小時 (六)
+              group5: match[5], // 結束分鐘
+              group6: match[6]
+            });
           
           if (match.length >= 7 && match[5] && match[4]) {
             // 格式: 下午三時至上午六時 或 下午三時至晚上六時
@@ -404,7 +473,14 @@ const extractTimeFromText = (text) => {
             endMinute = match[5] ? chineseNumberToInt(match[5]) : 0;
             endPeriod = startPeriod; // 使用相同時段
             
-            console.log('📋 基本解析:', { startPeriod, startHour, endHour, endPeriod });
+            console.log('📋 基本解析:', { 
+              startPeriod, 
+              startHour, 
+              endHour, 
+              endPeriod,
+              原始match2: match[2],
+              原始match4: match[4]
+            });
           }
           
           // 處理時段轉換
@@ -454,7 +530,7 @@ const extractTimeFromText = (text) => {
           endMinute = startMinute;
         }
         
-        // 創建時間對象
+        // 創建時間對象 (香港時區)
         const startMoment = dateBase.clone().hour(startHour).minute(startMinute).second(0);
         const endMoment = dateBase.clone().hour(endHour).minute(endMinute).second(0);
         
@@ -605,9 +681,9 @@ router.post('/', async (req, res) => {
     if (parsed.venue && parsed.startTime && parsed.confidence > 0.3) {
       response.canProceed = true;
       
-      // 格式化時間顯示
-      const startMoment = moment(parsed.startTime);
-      const endMoment = moment(parsed.endTime);
+      // 格式化時間顯示 (香港時區)
+      const startMoment = moment(parsed.startTime).utcOffset('+08:00');
+      const endMoment = moment(parsed.endTime).utcOffset('+08:00');
       
       const suggestion = {
         venue: parsed.venue,
