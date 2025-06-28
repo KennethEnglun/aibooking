@@ -11,14 +11,6 @@ const SchedulePage = () => {
   const [selectedVenue, setSelectedVenue] = useState('');
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'grid'
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  useEffect(() => {
-    fetchBookings();
-  }, [selectedDate, selectedVenue, fetchBookings]);
-
   const fetchData = async () => {
     try {
       const [bookingsRes, venuesRes] = await Promise.all([
@@ -46,6 +38,14 @@ const SchedulePage = () => {
       console.error('獲取預訂數據失敗:', error);
     }
   }, [selectedDate, selectedVenue]);
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  useEffect(() => {
+    fetchBookings();
+  }, [selectedDate, selectedVenue, fetchBookings]);
 
   const getStatusColor = (status) => {
     switch (status) {
