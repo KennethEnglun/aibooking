@@ -224,17 +224,23 @@ try {
 
 // 啟動服務器
 console.log(`🚀 嘗試啟動服務器在端口 ${PORT}...`);
+console.log(`📍 綁定地址: 0.0.0.0:${PORT}`);
+
 const server = app.listen(PORT, '0.0.0.0', (err) => {
   if (err) {
     console.error('❌ 服務器啟動失敗:', err);
+    console.error('錯誤詳情:', err.stack);
     process.exit(1);
   }
   
+  const address = server.address();
   console.log('🚀 AI場地預訂系統啟動成功！');
-  console.log(`📍 服務器運行在: http://0.0.0.0:${PORT}`);
+  console.log(`📍 服務器實際運行在: ${address.address}:${address.port}`);
   console.log(`🌐 環境: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔧 健康檢查: http://0.0.0.0:${PORT}/health`);
   console.log(`📊 API根路徑: http://0.0.0.0:${PORT}/api`);
+  console.log(`🗂️ 進程ID: ${process.pid}`);
+  console.log(`💾 內存使用: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`);
   
   if (isProduction) {
     console.log(`🎨 前端應用: http://0.0.0.0:${PORT}`);
@@ -246,23 +252,34 @@ const server = app.listen(PORT, '0.0.0.0', (err) => {
   setTimeout(() => {
     const http = require('http');
     const options = {
-      hostname: 'localhost',
+      hostname: '127.0.0.1',
       port: PORT,
       path: '/health',
-      method: 'GET'
+      method: 'GET',
+      timeout: 5000
     };
     
+    console.log('🧪 執行健康檢查自測...');
     const req = http.request(options, (res) => {
-      console.log(`✅ 健康檢查自測成功: ${res.statusCode}`);
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        console.log(`✅ 健康檢查自測成功: ${res.statusCode}`);
+        console.log(`📋 響應內容: ${data}`);
+      });
     });
     
     req.on('error', (err) => {
       console.error('❌ 健康檢查自測失敗:', err.message);
     });
     
-    req.setTimeout(5000);
+    req.on('timeout', () => {
+      console.error('❌ 健康檢查自測超時');
+      req.destroy();
+    });
+    
     req.end();
-  }, 2000);
+  }, 3000);
 });
 
 // 監聽啟動錯誤

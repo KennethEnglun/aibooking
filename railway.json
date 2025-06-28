@@ -2,10 +2,10 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "cd backend && npm install && cd ../frontend && npm install && npm run build && cd .."
+    "buildCommand": "echo '🔧 開始構建...' && ls -la && cd backend && echo '📦 安裝後端依賴...' && npm install && ls -la node_modules && cd ../frontend && echo '📦 安裝前端依賴...' && npm install && echo '🏗️ 構建前端...' && npm run build && ls -la build && cd .. && echo '✅ 構建完成'"
   },
   "deploy": {
-    "startCommand": "cd backend && node server.js",
+    "startCommand": "echo '🚀 開始啟動...' && ls -la && cd backend && echo '📂 當前目錄內容:' && ls -la && echo '📦 檢查node_modules:' && ls -la node_modules | head -10 && echo '🚀 啟動服務器...' && node server.js",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 600,
     "healthcheckInterval": 30,
