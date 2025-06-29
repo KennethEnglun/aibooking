@@ -50,8 +50,11 @@ const SchedulePage = () => {
       if (selectedVenue) params.append('venue', selectedVenue);
       
       const response = await api.get(`/api/admin/schedule?${params}`);
-      if (response.data && response.data.success) {
-        setBookings(response.data.data);
+      const resData = response.data;
+      if (Array.isArray(resData)) {
+        setBookings(resData);
+      } else if (resData && resData.success) {
+        setBookings(resData.data);
       } else {
         setBookings([]);
       }
