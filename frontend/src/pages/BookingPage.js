@@ -227,8 +227,25 @@ const BookingPage = () => {
       
     } catch (error) {
       console.error('❌ 預訂失敗:', error);
-      const errorMessage = error.response?.data?.error || '預訂時發生錯誤，請稍後再試';
-      addMessage('ai', errorMessage, { showError: true });
+      
+      // 檢查是否為時間衝突錯誤
+      if (error.response?.status === 409 && error.response?.data?.conflict) {
+        const conflictMessage = `預訂失敗：該時段已被預訂
+
+💡 建議：
+• 嘗試其他時間段
+• 查看時間表了解可用時段
+• 或選擇其他場地`;
+        
+        addMessage('ai', conflictMessage, { 
+          showError: true,
+          errorType: 'conflict',
+          suggestion: '您可以說「查看明天的預訂情況」或「我想預訂其他時間」'
+        });
+      } else {
+        const errorMessage = error.response?.data?.error || '預訂時發生錯誤，請稍後再試';
+        addMessage('ai', errorMessage, { showError: true });
+      }
     } finally {
       setIsLoading(false);
       setShowConfirmDialog(false);
@@ -421,10 +438,18 @@ const BookingPage = () => {
             {/* 錯誤信息 */}
             {message.showError && (
               <div className="mt-3 p-4 bg-red-50 rounded-lg border border-red-200">
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 mb-2">
                   <AlertCircle className="w-5 h-5 text-red-600" />
-                  <span className="font-medium text-red-800">預訂失敗</span>
+                  <span className="font-medium text-red-800">
+                    {message.errorType === 'conflict' ? '時間衝突' : '預訂失敗'}
+                  </span>
                 </div>
+                {message.suggestion && (
+                  <div className="mt-2 p-3 bg-blue-50 rounded border border-blue-200">
+                    <p className="text-sm text-blue-700 font-medium">💡 建議：</p>
+                    <p className="text-sm text-blue-600 mt-1">{message.suggestion}</p>
+                  </div>
+                )}
               </div>
             )}
             
