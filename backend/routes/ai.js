@@ -1,6 +1,6 @@
 const express = require('express');
 const axios = require('axios');
-const moment = require('moment');
+const moment = require('moment-timezone');
 const { findVenueByName, getAllVenues } = require('../config/venues');
 const fs = require('fs');
 const path = require('path');
@@ -18,6 +18,9 @@ console.log('🔧 AI模塊環境變量檢查:');
 console.log('🔑 DEEPSEEK_API_KEY:', process.env.DEEPSEEK_API_KEY ? '已配置' : '❌ 缺失');
 console.log('🌐 DEEPSEEK_API_URL:', process.env.DEEPSEEK_API_URL || '使用默認');
 console.log('🎯 NODE_ENV:', process.env.NODE_ENV || 'development');
+
+// 預設所有 moment() 使用香港時區
+moment.tz.setDefault('Asia/Hong_Kong');
 
 // 統一使用storage模塊的輔助函數
 const readBookings = () => {
@@ -373,7 +376,7 @@ ${venueList}
       // 3. 若仍失敗，使用當前時間 +2 小時作為預設
       if (!startTime) {
         console.log('⚠️ 全部時間解析失敗，使用預設 2 小時');
-        const now = moment().utcOffset('+08:00');
+        const now = moment().tz('Asia/Hong_Kong');
         startTime = now.format('YYYY-MM-DDTHH:mm:ss');
         endTime   = now.add(2, 'hours').format('YYYY-MM-DDTHH:mm:ss');
       }
@@ -538,7 +541,7 @@ const extractTimeFromText = (text) => {
   
   let startTime = null;
   let endTime = null;
-  let dateBase = moment();
+  let dateBase = moment.tz('Asia/Hong_Kong'); // 香港本地時間
   
   // 1. 解析具體日期 - 香港格式優先
   const datePatterns = [
@@ -576,9 +579,6 @@ const extractTimeFromText = (text) => {
     '下週日': 'next_sunday'
   };
   
-  // 設置香港時區基準時間
-  dateBase = moment().utcOffset('+08:00'); // 香港時區
-  
   // 檢查相對時間詞彙
   for (const [keyword, offset] of Object.entries(relativeTimePatterns)) {
     if (text.includes(keyword)) {
@@ -612,18 +612,18 @@ const extractTimeFromText = (text) => {
           const year = parseInt(match[1]);
           const month = parseInt(match[2]) - 1; // moment月份從0開始
           const day = parseInt(match[3]);
-          dateBase = moment().utcOffset('+08:00').year(year).month(month).date(day);
+          dateBase = moment.tz('Asia/Hong_Kong').year(year).month(month).date(day);
           console.log('📅 解析到完整日期:', dateBase.format('YYYY-MM-DD'));
         } else if (match[0].includes('月')) {
           const month = parseInt(match[1]) - 1;
           const day = parseInt(match[2]);
-          dateBase = moment().utcOffset('+08:00').month(month).date(day);
+          dateBase = moment.tz('Asia/Hong_Kong').month(month).date(day);
           console.log('📅 解析到月日:', dateBase.format('YYYY-MM-DD'));
         } else if (match[0].includes('-')) {
           const year = parseInt(match[1]);
           const month = parseInt(match[2]) - 1;
           const day = parseInt(match[3]);
-          dateBase = moment().utcOffset('+08:00').year(year).month(month).date(day);
+          dateBase = moment.tz('Asia/Hong_Kong').year(year).month(month).date(day);
           console.log('📅 解析到數字日期:', dateBase.format('YYYY-MM-DD'));
         } else if (match[0].includes('/')) {
           let year, month, day;
@@ -640,10 +640,10 @@ const extractTimeFromText = (text) => {
           } else { // 格式: D/M (香港格式: 日/月，使用當前年份)
             day = parseInt(match[1]);
             month = parseInt(match[2]) - 1;
-            year = moment().utcOffset('+08:00').year();
+            year = moment.tz('Asia/Hong_Kong').year();
             console.log('📅 香港格式 D/M:', { day, month: month + 1, year });
           }
-          dateBase = moment().utcOffset('+08:00').year(year).month(month).date(day);
+          dateBase = moment.tz('Asia/Hong_Kong').year(year).month(month).date(day);
           console.log('📅 解析到日期:', dateBase.format('YYYY-MM-DD'));
         } else if (match[0].includes('月') && /[一二三四五六七八九十]/.test(match[0])) {
           // 中文數字月份/日子
@@ -651,9 +651,9 @@ const extractTimeFromText = (text) => {
           const dayCn = match[2];
           const month = chineseNumberToInt(monthCn) - 1;
           const day = chineseNumberToInt(dayCn);
-          const year = moment().utcOffset('+08:00').year();
+          const year = moment.tz('Asia/Hong_Kong').year();
           console.log('📅 中文日期解析:', { year, month: month + 1, day });
-          dateBase = moment().utcOffset('+08:00').year(year).month(month).date(day);
+          dateBase = moment.tz('Asia/Hong_Kong').year(year).month(month).date(day);
           console.log('📅 解析到中文日期:', dateBase.format('YYYY-MM-DD'));
         }
         
@@ -993,8 +993,8 @@ router.post('/', async (req, res) => {
       // 檢查時間字符串是否包含時區信息
       if (parsed.startTime.includes('Z') || parsed.startTime.includes('+') || parsed.startTime.includes('T') && parsed.startTime.length > 19) {
         // 包含時區信息，需要轉換為香港時區
-        startMoment = moment(parsed.startTime).utcOffset('+08:00', true);
-        endMoment = moment(parsed.endTime).utcOffset('+08:00', true);
+        startMoment = moment(parsed.startTime).tz('Asia/Hong_Kong');
+        endMoment = moment(parsed.endTime).tz('Asia/Hong_Kong');
       } else {
         // 不包含時區信息，直接作為本地時間處理
         startMoment = moment(parsed.startTime, 'YYYY-MM-DDTHH:mm:ss');
@@ -1011,8 +1011,8 @@ router.post('/', async (req, res) => {
         );
         
         recurringDates.forEach((dateInfo, index) => {
-          const recStartMoment = moment(dateInfo.startTime).utcOffset('+08:00', true);
-          const recEndMoment = moment(dateInfo.endTime).utcOffset('+08:00', true);
+          const recStartMoment = moment(dateInfo.startTime).tz('Asia/Hong_Kong');
+          const recEndMoment = moment(dateInfo.endTime).tz('Asia/Hong_Kong');
           
           const suggestion = {
             venue: parsed.venue,
