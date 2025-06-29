@@ -117,19 +117,8 @@ const BookingPage = () => {
     addMessage('user', naturalLanguageText);
 
     try {
-      const userTimeInfo = getUserTimeInfo();
-      const payload = {
-        venue: venueInput,
-        date: dateInput,
-        time: timeInput,
-        purpose: purposeInput,
-        contactInfo,
-        multiBookingEnabled,
-        ...userTimeInfo,
-        naturalLanguageText // 新增：發送描述文本
-      };
-      // 調用AI解析API
-      const response = await api.post('/api/ai', payload);
+      // 調用AI解析API - 只發送text字段，符合後端期望
+      const response = await api.post('/api/ai', { text: naturalLanguageText });
       const { success, canProceed, suggestions, error, help, parsed } = response.data;
       if (success && canProceed && suggestions.length > 0) {
         const aiProvider = parsed?.aiProvider || 'AI';

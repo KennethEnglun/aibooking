@@ -38,19 +38,80 @@ const addSingleBooking = (booking) => {
 
 // 檢查時間衝突的函數
 const hasTimeConflict = (newBooking, existingBookings) => {
-  const newStart = moment(newBooking.startTime);
-  const newEnd = moment(newBooking.endTime);
+  // 確保時間格式正確處理
+  let newStart, newEnd;
+  
+  try {
+    // 處理不同的時間格式
+    if (newBooking.startTime.includes('T') && newBooking.startTime.includes('Z')) {
+      // ISO格式帶時區
+      newStart = moment(newBooking.startTime).tz('Asia/Hong_Kong');
+      newEnd = moment(newBooking.endTime).tz('Asia/Hong_Kong');
+    } else if (newBooking.startTime.includes('T')) {
+      // ISO格式無時區，假設為香港時區
+      newStart = moment.tz(newBooking.startTime, 'Asia/Hong_Kong');
+      newEnd = moment.tz(newBooking.endTime, 'Asia/Hong_Kong');
+    } else {
+      // 簡單格式
+      newStart = moment(newBooking.startTime);
+      newEnd = moment(newBooking.endTime);
+    }
+    
+    if (!newStart.isValid() || !newEnd.isValid()) {
+      console.error('❌ 無效的時間格式:', { startTime: newBooking.startTime, endTime: newBooking.endTime });
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ 時間解析錯誤:', error);
+    return false;
+  }
   
   return existingBookings.some(booking => {
     if (booking.venueId !== newBooking.venueId || booking.status === 'cancelled') {
       return false;
     }
     
-    const existingStart = moment(booking.startTime);
-    const existingEnd = moment(booking.endTime);
+    let existingStart, existingEnd;
+    
+    try {
+      // 處理現有預訂的時間格式
+      if (booking.startTime.includes('T') && booking.startTime.includes('Z')) {
+        existingStart = moment(booking.startTime).tz('Asia/Hong_Kong');
+        existingEnd = moment(booking.endTime).tz('Asia/Hong_Kong');
+      } else if (booking.startTime.includes('T')) {
+        existingStart = moment.tz(booking.startTime, 'Asia/Hong_Kong');
+        existingEnd = moment.tz(booking.endTime, 'Asia/Hong_Kong');
+      } else {
+        existingStart = moment(booking.startTime);
+        existingEnd = moment(booking.endTime);
+      }
+      
+      if (!existingStart.isValid() || !existingEnd.isValid()) {
+        console.warn('⚠️ 現有預訂時間格式無效:', { startTime: booking.startTime, endTime: booking.endTime });
+        return false;
+      }
+    } catch (error) {
+      console.warn('⚠️ 現有預訂時間解析錯誤:', error);
+      return false;
+    }
     
     // 檢查時間重疊
-    return (newStart.isBefore(existingEnd) && newEnd.isAfter(existingStart));
+    const hasConflict = (newStart.isBefore(existingEnd) && newEnd.isAfter(existingStart));
+    
+    if (hasConflict) {
+      console.log('⚠️ 檢測到時間衝突:', {
+        newBooking: {
+          start: newStart.format('YYYY-MM-DD HH:mm'),
+          end: newEnd.format('YYYY-MM-DD HH:mm')
+        },
+        existingBooking: {
+          start: existingStart.format('YYYY-MM-DD HH:mm'),
+          end: existingEnd.format('YYYY-MM-DD HH:mm')
+        }
+      });
+    }
+    
+    return hasConflict;
   });
 };
 
@@ -973,7 +1034,7 @@ const enhancedFallbackProcessing = async (text) => {
   console.log('🔧 使用增強後備處理邏輯');
   
   const venue = extractVenueFromText(text);
-  const baseMoment = getUserBaseMoment(req);
+  const baseMoment = moment.tz('Asia/Hong_Kong'); // 直接使用香港時區
   const timeResult = extractTimeFromText(text, baseMoment);
   const purpose = extractPurposeFromText(text);
   
@@ -1051,18 +1112,48 @@ router.post('/', async (req, res) => {
     if (parsed.venue && parsed.startTime && parsed.confidence > 0.3) {
       response.canProceed = true;
       
-      // 格式化時間顯示 - 正確處理本地時間
+      // 驗證和修正時間格式
       let startMoment, endMoment;
       
-      // 檢查時間字符串是否包含時區信息
-      if (parsed.startTime.includes('Z') || parsed.startTime.includes('+') || parsed.startTime.includes('T') && parsed.startTime.length > 19) {
-        // 包含時區信息，需要轉換為香港時區
-        startMoment = moment(parsed.startTime).tz('Asia/Hong_Kong');
-        endMoment = moment(parsed.endTime).tz('Asia/Hong_Kong');
-      } else {
-        // 不包含時區信息，直接作為本地時間處理
-        startMoment = moment(parsed.startTime, 'YYYY-MM-DDTHH:mm:ss');
-        endMoment = moment(parsed.endTime, 'YYYY-MM-DDTHH:mm:ss');
+      try {
+        // 檢查時間字符串是否包含時區信息
+        if (parsed.startTime.includes('Z') || parsed.startTime.includes('+') || parsed.startTime.includes('T') && parsed.startTime.length > 19) {
+          // 包含時區信息，需要轉換為香港時區
+          startMoment = moment(parsed.startTime).tz('Asia/Hong_Kong');
+          endMoment = moment(parsed.endTime).tz('Asia/Hong_Kong');
+        } else {
+          // 不包含時區信息，直接作為本地時間處理
+          startMoment = moment(parsed.startTime, 'YYYY-MM-DDTHH:mm:ss');
+          endMoment = moment(parsed.endTime, 'YYYY-MM-DDTHH:mm:ss');
+        }
+        
+        // 驗證時間是否有效
+        if (!startMoment.isValid() || !endMoment.isValid()) {
+          console.error('❌ 無效的時間格式:', { startTime: parsed.startTime, endTime: parsed.endTime });
+          response.canProceed = false;
+          response.error = '時間格式錯誤，請重新輸入';
+          return res.json(response);
+        }
+        
+        // 確保結束時間晚於開始時間
+        if (endMoment.isSameOrBefore(startMoment)) {
+          console.error('❌ 結束時間必須晚於開始時間');
+          response.canProceed = false;
+          response.error = '結束時間必須晚於開始時間';
+          return res.json(response);
+        }
+        
+        console.log('✅ 時間格式驗證通過:', {
+          startTime: startMoment.format('YYYY-MM-DD HH:mm'),
+          endTime: endMoment.format('YYYY-MM-DD HH:mm'),
+          duration: endMoment.diff(startMoment, 'hours', true) + '小時'
+        });
+        
+      } catch (error) {
+        console.error('❌ 時間解析錯誤:', error);
+        response.canProceed = false;
+        response.error = '時間解析錯誤，請檢查時間格式';
+        return res.json(response);
       }
       
       // 如果是重複預訂，生成多個建議
@@ -1240,6 +1331,53 @@ router.post('/book', async (req, res) => {
       isRecurring: recurringInfo.isRecurring
     });
     
+    // 驗證預訂數據完整性
+    if (!parsed.venue || !parsed.venue.id || !parsed.venue.name) {
+      return res.status(400).json({ 
+        error: '場地信息不完整',
+        details: '無法識別場地信息'
+      });
+    }
+    
+    if (!parsed.startTime || !parsed.endTime) {
+      return res.status(400).json({ 
+        error: '時間信息不完整',
+        details: '開始時間或結束時間缺失'
+      });
+    }
+    
+    if (!contactInfo || contactInfo.trim().length === 0) {
+      return res.status(400).json({ 
+        error: '聯絡信息缺失',
+        details: '請提供聯絡信息'
+      });
+    }
+    
+    // 驗證時間格式
+    try {
+      const startMoment = moment(parsed.startTime);
+      const endMoment = moment(parsed.endTime);
+      
+      if (!startMoment.isValid() || !endMoment.isValid()) {
+        return res.status(400).json({ 
+          error: '時間格式錯誤',
+          details: '無法解析時間格式'
+        });
+      }
+      
+      if (endMoment.isSameOrBefore(startMoment)) {
+        return res.status(400).json({ 
+          error: '時間邏輯錯誤',
+          details: '結束時間必須晚於開始時間'
+        });
+      }
+    } catch (error) {
+      return res.status(400).json({ 
+        error: '時間處理錯誤',
+        details: error.message
+      });
+    }
+    
     // 如果是重複預訂，創建多個預訂
     if (recurringInfo.isRecurring) {
       const recurringDates = generateRecurringDates(
@@ -1338,9 +1476,13 @@ router.post('/book', async (req, res) => {
     // 直接處理預訂（支持重複預訂）
     const existingBookings = readBookings();
     
-    if (parsed.recurring) {
+    // 檢查是否為重複預訂（優先使用recurringInfo，然後檢查parsed.recurring）
+    const isRecurringBooking = recurringInfo.isRecurring || (parsed.recurring && parsed.recurring.isRecurring);
+    
+    if (isRecurringBooking) {
       // 創建重複預訂
-      const recurringBookings = await createRecurringBookings(bookingData, parsed.recurring);
+      const recurringInfoToUse = recurringInfo.isRecurring ? recurringInfo : parsed.recurring;
+      const recurringBookings = await createRecurringBookings(bookingData, recurringInfoToUse);
       const conflictingBookings = [];
       const successfulBookings = [];
       
@@ -1398,6 +1540,14 @@ router.post('/book', async (req, res) => {
       
       addSingleBooking(newBooking);
       
+      console.log('✅ 單次預訂創建成功:', {
+        id: newBooking.id,
+        venue: newBooking.venueName,
+        startTime: newBooking.startTime,
+        endTime: newBooking.endTime,
+        purpose: newBooking.purpose
+      });
+      
       res.json({
         success: true,
         message: '預訂成功創建',
@@ -1408,10 +1558,31 @@ router.post('/book', async (req, res) => {
     }
     
   } catch (error) {
-    console.error('AI預訂處理失敗:', error);
+    console.error('❌ AI預訂處理失敗:', {
+      error: error.message,
+      stack: error.stack,
+      input: { text: req.body.text, contactInfo: req.body.contactInfo }
+    });
+    
+    // 提供更詳細的錯誤信息
+    let errorMessage = 'AI預訂處理失敗';
+    let errorDetails = error.message;
+    
+    if (error.message.includes('timezone')) {
+      errorMessage = '時間格式處理錯誤';
+      errorDetails = '請檢查時間格式是否正確';
+    } else if (error.message.includes('moment')) {
+      errorMessage = '時間解析錯誤';
+      errorDetails = '無法解析指定的時間格式';
+    } else if (error.message.includes('venue')) {
+      errorMessage = '場地信息錯誤';
+      errorDetails = '無法找到指定的場地';
+    }
+    
     res.status(500).json({ 
-      error: 'AI預訂處理失敗',
-      details: error.message 
+      error: errorMessage,
+      details: errorDetails,
+      timestamp: new Date().toISOString()
     });
   }
 });

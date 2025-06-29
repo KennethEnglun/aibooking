@@ -87,9 +87,52 @@ class DataStorage {
   }
 
   addBooking(booking) {
-    const bookings = this.loadBookings();
-    bookings.push(booking);
-    return this.saveBookings(bookings);
+    try {
+      // 驗證預訂數據
+      if (!booking || typeof booking !== 'object') {
+        console.error('❌ 無效的預訂數據:', booking);
+        return false;
+      }
+      
+      if (!booking.id || !booking.venueId || !booking.startTime || !booking.endTime) {
+        console.error('❌ 預訂數據缺少必要字段:', {
+          hasId: !!booking.id,
+          hasVenueId: !!booking.venueId,
+          hasStartTime: !!booking.startTime,
+          hasEndTime: !!booking.endTime
+        });
+        return false;
+      }
+      
+      const bookings = this.loadBookings();
+      
+      // 檢查是否已存在相同ID的預訂
+      const existingIndex = bookings.findIndex(b => b.id === booking.id);
+      if (existingIndex !== -1) {
+        console.warn('⚠️ 預訂ID已存在，將更新現有預訂:', booking.id);
+        bookings[existingIndex] = { ...bookings[existingIndex], ...booking };
+      } else {
+        bookings.push(booking);
+      }
+      
+      const success = this.saveBookings(bookings);
+      
+      if (success) {
+        console.log('✅ 預訂保存成功:', {
+          id: booking.id,
+          venue: booking.venueName || booking.venueId,
+          startTime: booking.startTime,
+          endTime: booking.endTime
+        });
+      } else {
+        console.error('❌ 預訂保存失敗');
+      }
+      
+      return success;
+    } catch (error) {
+      console.error('❌ 添加預訂時發生錯誤:', error);
+      return false;
+    }
   }
 
   updateBooking(id, updatedBooking) {
