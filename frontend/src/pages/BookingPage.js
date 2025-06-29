@@ -30,11 +30,15 @@ const BookingPage = () => {
 
   // 使用useCallback優化checkAiStatus函數
   const checkAiStatus = useCallback(async () => {
+    console.log('🔍 開始檢查AI狀態...');
     try {
+      console.log('📡 發送API請求到:', '/ai/status');
       const response = await api.get('/ai/status');
+      console.log('📥 收到API響應:', response.data);
       const data = response.data;
       
       if (data.status === 'connected') {
+        console.log('✅ AI狀態：已連接');
         setAiStatus({
           status: 'connected',
           message: `✅ AI服務正常 (${data.provider || 'Unknown'})`,
@@ -42,6 +46,7 @@ const BookingPage = () => {
           responseTime: data.responseTime
         });
       } else {
+        console.log('⚠️ AI狀態：異常', data);
         setAiStatus({
           status: 'error',
           message: `❌ ${data.message || 'AI服務異常'}`,
@@ -49,7 +54,13 @@ const BookingPage = () => {
         });
       }
     } catch (error) {
-      console.error('AI狀態檢查失敗:', error);
+      console.error('❌ AI狀態檢查失敗:', error);
+      console.error('錯誤詳情:', {
+        message: error.message,
+        code: error.code,
+        response: error.response?.data,
+        status: error.response?.status
+      });
       const errorMessage = error.response?.data?.message || error.message || '未知錯誤';
       setAiStatus({
         status: 'error',
