@@ -11,7 +11,6 @@ const storage = require('../data/storage');
 require('dotenv').config();
 
 const router = express.Router();
-const bookingsFile = path.join(__dirname, '../data/bookings.json');
 
 // 在模塊開始時檢查環境變量
 console.log('🔧 AI模塊環境變量檢查:');
@@ -350,7 +349,7 @@ ${venueList}
       let startTime = null;
       let endTime = null;
 
-      const baseMoment = await getHongKongNow();
+      const baseMoment = getHongKongNow();
 
       // 先嘗試 AI 回傳時間
       let aiStartMoment = null;
@@ -940,7 +939,7 @@ const enhancedFallbackProcessing = async (text) => {
   console.log('🔧 使用增強後備處理邏輯');
   
   const venue = extractVenueFromText(text);
-  const baseMoment = await getHongKongNow();
+  const baseMoment = getHongKongNow();
   const timeResult = extractTimeFromText(text, baseMoment);
   const purpose = extractPurposeFromText(text);
   
@@ -1427,22 +1426,10 @@ router.get('/status', async (req, res) => {
   }
 });
 
-// 取得香港目前時間（使用 worldtimeapi；5 分鐘快取）
-let _hkTimeCache = { value: null, fetchedAt: 0 };
-const getHongKongNow = async () => {
-  const now = Date.now();
-  if (_hkTimeCache.value && now - _hkTimeCache.fetchedAt < 5 * 60 * 1000) {
-    return _hkTimeCache.value.clone();
-  }
-  try {
-    const resp = await axios.get('https://worldtimeapi.org/api/timezone/Asia/Hong_Kong');
-    const m = moment.tz(resp.data.datetime, 'Asia/Hong_Kong');
-    _hkTimeCache = { value: m, fetchedAt: now };
-    return m.clone();
-  } catch (e) {
-    console.warn('⚠️ 取得線上香港時間失敗，改用系統時間:', e.message);
-    return moment.tz('Asia/Hong_Kong');
-  }
+// 取得香港目前時間（使用本地設備時間，設定為香港時區）
+const getHongKongNow = () => {
+  console.log('🕐 使用本地設備時間，設定為香港時區');
+  return moment.tz('Asia/Hong_Kong');
 };
 
 module.exports = router; 
