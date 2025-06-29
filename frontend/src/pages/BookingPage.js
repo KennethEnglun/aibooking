@@ -229,7 +229,7 @@ const BookingPage = () => {
       console.error('❌ 預訂失敗:', error);
       
       // 檢查是否為時間衝突錯誤
-      if (error.response?.status === 409 && error.response?.data?.conflict) {
+      if (error.response?.data?.conflict) {
         const conflictMessage = `預訂失敗：該時段已被預訂
 
 💡 建議：
@@ -244,7 +244,9 @@ const BookingPage = () => {
         });
       } else {
         const errorMessage = error.response?.data?.error || '預訂時發生錯誤，請稍後再試';
-        addMessage('ai', errorMessage, { showError: true });
+        addMessage('ai', `預訂失敗
+
+${errorMessage}`, { showError: true });
       }
     } finally {
       setIsLoading(false);
