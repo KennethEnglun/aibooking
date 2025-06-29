@@ -350,28 +350,58 @@ ${venueList}
       let startTime = null;
       let endTime = null;
 
-      // 1. 先嘗試使用 AI 回傳時間
+      const baseMoment = await getHongKongNow();
+
+      // 先嘗試 AI 回傳時間
+      let aiStartMoment = null;
+      let aiEndMoment = null;
       if (parsed.startTime && parsed.endTime) {
-        const aiStart = moment(parsed.startTime);
-        const aiEnd   = moment(parsed.endTime);
-        if (aiStart.isValid() && aiEnd.isValid()) {
-          startTime = aiStart.format('YYYY-MM-DDTHH:mm:ss');
-          endTime   = aiEnd.format('YYYY-MM-DDTHH:mm:ss');
-          console.log('✅ 使用 AI 時間:', { startTime, endTime });
-        } else {
-          console.log('⚠️ AI 時間無效，嘗試本地解析');
+        aiStartMoment = moment(parsed.startTime).tz('Asia/Hong_Kong');
+        aiEndMoment   = moment(parsed.endTime).tz('Asia/Hong_Kong');
+        if (!(aiStartMoment.isValid() && aiEndMoment.isValid())) {
+          aiStartMoment = null;
+          aiEndMoment = null;
         }
       }
 
-      // 2. 若 AI 時間缺失或無效，使用本地正則解析
-      if (!startTime) {
-        const baseMoment = await getHongKongNow();
-        const timeResult = extractTimeFromText(text, baseMoment);
-        if (timeResult.startTime && timeResult.endTime) {
-          startTime = timeResult.startTime;
-          endTime   = timeResult.endTime;
-          console.log('✅ 本地時間解析成功 (fallback)');
+      // 再使用本地正則解析
+      const localTimeResult = extractTimeFromText(text, baseMoment);
+      let localStartMoment = null, localEndMoment = null;
+      if (localTimeResult.startTime) {
+        localStartMoment = moment(localTimeResult.startTime);
+        localEndMoment = moment(localTimeResult.endTime);
+      }
+
+      // 選擇較合理時間：優先使用距現在最近且未過去的時間
+      const nowMoment = baseMoment.clone();
+      const chooseLocal = () => {
+        startTime = localTimeResult.startTime;
+        endTime = localTimeResult.endTime;
+        console.log('✅ 使用本地時間解析結果');
+      };
+
+      if (aiStartMoment && aiStartMoment.isAfter(nowMoment)) {
+        // AI 時間在未來
+        if (localStartMoment && localStartMoment.isAfter(nowMoment)) {
+          // 兩者皆在未來，選較接近現在者
+          const diffAi = Math.abs(aiStartMoment.diff(nowMoment));
+          const diffLocal = Math.abs(localStartMoment.diff(nowMoment));
+          if (diffLocal < diffAi) {
+            chooseLocal();
+          } else {
+            startTime = aiStartMoment.format('YYYY-MM-DDTHH:mm:ss');
+            endTime = aiEndMoment.format('YYYY-MM-DDTHH:mm:ss');
+            console.log('✅ 使用 AI 時間 (較接近現在)');
+          }
+        } else {
+          // 本地無有效未來時間，使用 AI
+          startTime = aiStartMoment.format('YYYY-MM-DDTHH:mm:ss');
+          endTime = aiEndMoment.format('YYYY-MM-DDTHH:mm:ss');
+          console.log('✅ 使用 AI 時間');
         }
+      } else if (localStartMoment && localStartMoment.isAfter(nowMoment)) {
+        // 只本地有效
+        chooseLocal();
       }
 
       // 3. 若仍失敗，使用當前時間 +2 小時作為預設
