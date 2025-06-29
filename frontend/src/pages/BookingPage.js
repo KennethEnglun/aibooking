@@ -66,7 +66,7 @@ const BookingPage = () => {
 
   useEffect(() => {
     checkAiStatus();
-  }, []);
+  }, [checkAiStatus]);
 
   const addMessage = (type, content, extra = {}) => {
     const newMessage = {

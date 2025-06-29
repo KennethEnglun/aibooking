@@ -1,18 +1,18 @@
 # 簡化的Railway部署配置（備用方案）
 [phases.setup]
-nixPkgs = ['nodejs', 'npm']
+nixPkgs = ['nodejs-18_x', 'npm']
 
 [phases.install]
-cmds = ['npm ci']
-
-[phases.build]
 cmds = [
-  'npm run install-all',
-  'cd frontend && npm run build'
+  'echo "Installing backend dependencies..." && cd backend && npm install',
+  'echo "Installing frontend dependencies..." && cd ../frontend && npm install'
 ]
 
+[phases.build]
+cmds = ['echo "Building frontend..." && cd frontend && npm run build']
+
 [start]
-cmd = 'npm start'
+cmd = 'echo "Starting backend..." && cd backend && npm start'
 
 [variables]
 NODE_ENV = 'production' 
