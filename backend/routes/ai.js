@@ -57,9 +57,20 @@ const hasTimeConflict = (newBooking, existingBookings) => {
 // 創建重複預訂的函數
 const createRecurringBookings = async (bookingData, recurringInfo) => {
   const bookings = [];
-  const startDate = moment(bookingData.startTime);
-  const endDate = moment(bookingData.endTime);
-  let currentDate = startDate.clone();
+  const startTime = moment(bookingData.startTime);
+  const endTime = moment(bookingData.endTime);
+  const duration = endTime.diff(startTime); // 計算持續時間（毫秒）
+  
+  console.log('🔄 開始創建重複預訂:', {
+    originalStart: startTime.format(),
+    originalEnd: endTime.format(),
+    duration: duration / (1000 * 60) + '分鐘',
+    recurringType: recurringInfo.type,
+    dayOfWeek: recurringInfo.dayOfWeek
+  });
+  
+  // 設定第一次預訂的日期
+  let currentDate = startTime.clone();
   
   // 若為每週重複，並提供 dayOfWeek，將 currentDate 調整到最近一次該星期
   if (recurringInfo.type === 'weekly' && recurringInfo.dayOfWeek !== null) {
@@ -68,18 +79,28 @@ const createRecurringBookings = async (bookingData, recurringInfo) => {
     let daysToAdd = (targetDay - currentDay + 7) % 7;
     if (daysToAdd === 0) daysToAdd = 7; // 總是排到下一週
     currentDate.add(daysToAdd, 'days');
+    console.log('📅 調整到目標星期:', {
+      targetDay,
+      currentDay,
+      daysToAdd,
+      newDate: currentDate.format('YYYY-MM-DD dddd')
+    });
   }
   
-  // 生成未來12週的重複預訂（可根據需要調整）
-  const maxOccurrences = 12;
+  // 生成未來8週的重複預訂（減少數量避免太多預訂）
+  const maxOccurrences = 8;
   
   for (let i = 0; i < maxOccurrences; i++) {
+    // 計算這次預訂的開始和結束時間
+    const bookingStartTime = currentDate.clone();
+    const bookingEndTime = currentDate.clone().add(duration, 'milliseconds');
+    
     const booking = {
       id: uuidv4(),
       venueId: bookingData.venueId,
       venueName: bookingData.venueName,
-      startTime: currentDate.clone().toISOString(),
-      endTime: currentDate.clone().add(endDate.diff(startDate)).toISOString(),
+      startTime: bookingStartTime.toISOString(),
+      endTime: bookingEndTime.toISOString(),
       purpose: bookingData.purpose,
       contactInfo: bookingData.contactInfo,
       status: 'confirmed',
@@ -89,9 +110,15 @@ const createRecurringBookings = async (bookingData, recurringInfo) => {
       recurringPattern: recurringInfo.pattern
     };
     
+    console.log(`📋 創建第${i+1}個重複預訂:`, {
+      date: bookingStartTime.format('YYYY-MM-DD dddd'),
+      time: `${bookingStartTime.format('HH:mm')} - ${bookingEndTime.format('HH:mm')}`,
+      venue: bookingData.venueName
+    });
+    
     bookings.push(booking);
     
-    // 根據重複類型增加時間
+    // 根據重複類型增加時間到下一次預訂
     switch (recurringInfo.type) {
       case 'weekly':
         currentDate.add(1, 'week');
@@ -105,6 +132,7 @@ const createRecurringBookings = async (bookingData, recurringInfo) => {
     }
   }
   
+  console.log(`✅ 生成了 ${bookings.length} 個重複預訂`);
   return bookings;
 };
 
@@ -1420,7 +1448,7 @@ router.get('/status', async (req, res) => {
     );
 
     res.json({
-      status: 'operational',
+      status: 'connected',
       provider: 'DeepSeek',
       apiConnected: true,
       model: 'deepseek-chat',
