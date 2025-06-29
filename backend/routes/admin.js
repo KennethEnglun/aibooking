@@ -1,7 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const moment = require('moment');
+const moment = require('moment-timezone');
 const { getAllVenues } = require('../config/venues');
 
 // 確保環境變量被正確加載
@@ -128,8 +128,9 @@ router.get('/schedule', (req, res) => {
     
     // 按日期過濾
     if (date) {
+      const targetDay = moment.tz(date, 'Asia/Hong_Kong');
       filteredBookings = filteredBookings.filter(b => 
-        moment(b.startTime).isSame(moment(date), 'day')
+        moment.tz(b.startTime, 'Asia/Hong_Kong').isSame(targetDay, 'day')
       );
     }
     
@@ -283,5 +284,7 @@ function generateMonthlyTrends(bookings) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([month, count]) => ({ month, bookings: count }));
 }
+
+moment.tz.setDefault('Asia/Hong_Kong');
 
 module.exports = router; 
