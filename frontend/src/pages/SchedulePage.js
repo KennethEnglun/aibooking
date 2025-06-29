@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Calendar, MapPin, Clock, Users, Filter, RefreshCw } from 'lucide-react';
 import api from '../api';
-import moment from 'moment';
+import moment from 'moment-timezone';
+moment.tz.setDefault('Asia/Hong_Kong');
 
 const SchedulePage = () => {
   const [bookings, setBookings] = useState([]);
@@ -96,8 +97,8 @@ const SchedulePage = () => {
   const getBookingsForTimeSlot = (venueId, hour) => {
     return bookings.filter(booking => {
       if (booking.venueId !== venueId) return false;
-      const startHour = moment(booking.startTime).hour();
-      const endHour = moment(booking.endTime).hour();
+      const startHour = moment.tz(booking.startTime,'Asia/Hong_Kong').hour();
+      const endHour = moment.tz(booking.endTime,'Asia/Hong_Kong').hour();
       return hour >= startHour && hour < endHour;
     });
   };
@@ -224,8 +225,8 @@ const SchedulePage = () => {
                         <div className="flex items-center">
                           <Clock className="w-4 h-4 text-gray-400 mr-2" />
                           <div className="text-sm text-gray-900">
-                            <div>{moment(booking.startTime).format('MM-DD HH:mm')}</div>
-                            <div className="text-gray-500">至 {moment(booking.endTime).format('HH:mm')}</div>
+                            <div>{moment.tz(booking.startTime,'Asia/Hong_Kong').format('MM-DD HH:mm')}</div>
+                            <div className="text-gray-500">至 {moment.tz(booking.endTime,'Asia/Hong_Kong').format('HH:mm')}</div>
                           </div>
                         </div>
                       </td>
@@ -334,7 +335,7 @@ const SchedulePage = () => {
             <Clock className="w-8 h-8 text-orange-600 mr-3" />
             <div>
               <div className="text-2xl font-bold text-gray-900">
-                {bookings.reduce((sum, b) => sum + moment(b.endTime).diff(moment(b.startTime), 'hours'), 0)}
+                {bookings.reduce((sum, b) => sum + moment.tz(b.endTime,'Asia/Hong_Kong').diff(moment.tz(b.startTime,'Asia/Hong_Kong'), 'hours'), 0)}
               </div>
               <div className="text-sm text-gray-600">總時數</div>
             </div>
