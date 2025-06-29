@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Bot, User, Calendar, MapPin, Clock, CheckCircle, AlertCircle, Zap } from 'lucide-react';
 import api from '../api';
 import moment from 'moment';
@@ -17,7 +17,7 @@ const BookingPage = () => {
   const [contactInfo, setContactInfo] = useState('');
   const [showContactModal, setShowContactModal] = useState(false);
   const [pendingBooking, setPendingBooking] = useState(null);
-  const [aiStatus, setAiStatus] = useState(null);
+  const [aiStatus, setAiStatus] = useState({ status: 'checking', message: '檢查中...' });
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -28,37 +28,40 @@ const BookingPage = () => {
     scrollToBottom();
   }, [messages]);
 
-  useEffect(() => {
-    checkAiStatus();
-  }, []);
-
-  const checkAiStatus = async () => {
+  // 使用useCallback優化checkAiStatus函數
+  const checkAiStatus = useCallback(async () => {
     try {
-      const response = await api.get('/api/ai/status');
-      setAiStatus(response.data);
+      const response = await api.get('/ai/status');
+      const data = response.data;
       
-      // 如果AI服務不可用，顯示警告
-      if (response.data.status !== 'operational') {
-        console.warn('AI服務狀態異常:', response.data);
-        addMessage('system', `⚠️ AI服務狀態: ${response.data.error || '服務降級'}。系統將使用後備處理邏輯。`, {
-          type: 'warning',
-          category: response.data.category
+      if (data.status === 'connected') {
+        setAiStatus({
+          status: 'connected',
+          message: `✅ AI服務正常 (${data.provider || 'Unknown'})`,
+          provider: data.provider,
+          responseTime: data.responseTime
+        });
+      } else {
+        setAiStatus({
+          status: 'error',
+          message: `❌ ${data.message || 'AI服務異常'}`,
+          error: data.error
         });
       }
     } catch (error) {
-      console.error('檢查AI狀態失敗:', error);
+      console.error('AI狀態檢查失敗:', error);
+      const errorMessage = error.response?.data?.message || error.message || '未知錯誤';
       setAiStatus({
         status: 'error',
-        provider: 'Unknown',
-        apiConnected: false,
-        error: '無法連接到AI服務'
-      });
-      
-      addMessage('system', '⚠️ 無法連接到AI服務，系統將使用基本處理邏輯。', {
-        type: 'error'
+        message: `❌ 連接失敗: ${errorMessage}`,
+        error: errorMessage
       });
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    checkAiStatus();
+  }, [checkAiStatus]);
 
   const addMessage = (type, content, extra = {}) => {
     const newMessage = {
@@ -449,20 +452,22 @@ const BookingPage = () => {
             {/* AI狀態指示器 */}
             {aiStatus && (
               <div className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm ${
-                aiStatus.status === 'operational' 
+                aiStatus.status === 'connected' 
                   ? 'bg-green-50 text-green-700 border border-green-200' 
-                  : aiStatus.status === 'degraded'
-                  ? 'bg-yellow-50 text-yellow-700 border border-yellow-200'
-                  : 'bg-red-50 text-red-700 border border-red-200'
+                  : aiStatus.status === 'error'
+                  ? 'bg-red-50 text-red-700 border border-red-200'
+                  : 'bg-yellow-50 text-yellow-700 border border-yellow-200'
               }`}>
                 <div className={`w-2 h-2 rounded-full ${
-                  aiStatus.status === 'operational' ? 'bg-green-500' :
-                  aiStatus.status === 'degraded' ? 'bg-yellow-500' : 'bg-red-500'
+                  aiStatus.status === 'connected' ? 'bg-green-500' :
+                  aiStatus.status === 'error' ? 'bg-red-500' : 'bg-yellow-500'
                 }`}></div>
                 <span>
-                  {aiStatus.status === 'operational' 
-                    ? `AI服務正常 (${aiStatus.provider})` 
-                    : `AI服務異常: ${aiStatus.error || '未知錯誤'}`
+                  {aiStatus.status === 'connected' 
+                    ? aiStatus.message 
+                    : aiStatus.status === 'error'
+                    ? aiStatus.error
+                    : 'AI服務異常'
                   }
                 </span>
               </div>
