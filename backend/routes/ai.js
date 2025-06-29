@@ -1385,6 +1385,18 @@ router.post('/book', async (req, res) => {
 // GET /api/ai/status - 檢查AI服務狀態
 router.get('/status', async (req, res) => {
   try {
+    // 檢查環境變量
+    if (!process.env.DEEPSEEK_API_KEY) {
+      return res.json({
+        status: 'error',
+        provider: 'DeepSeek',
+        apiConnected: false,
+        error: 'API密鑰未配置',
+        fallbackAvailable: true,
+        hasApiKey: false
+      });
+    }
+
     // 測試DeepSeek API連接
     const testResponse = await axios.post(
       process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions',
@@ -1402,7 +1414,8 @@ router.get('/status', async (req, res) => {
         headers: {
           'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 10000 // 10秒超時
       }
     );
 
@@ -1410,19 +1423,48 @@ router.get('/status', async (req, res) => {
       status: 'operational',
       provider: 'DeepSeek',
       apiConnected: true,
-      model: 'deepseek-chat'
+      model: 'deepseek-chat',
+      responseTime: Date.now(),
+      version: '2.0'
     });
   } catch (error) {
     console.error('DeepSeek API測試失敗:', error.message);
-    res.json({
+    
+    let errorDetails = {
       status: 'degraded',
       provider: 'DeepSeek (Fallback)',
       apiConnected: false,
-      error: error.message,
       fallbackAvailable: true,
       endpoint: process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions',
-      hasApiKey: !!process.env.DEEPSEEK_API_KEY
-    });
+      hasApiKey: !!process.env.DEEPSEEK_API_KEY,
+      timestamp: new Date().toISOString()
+    };
+
+    // 詳細錯誤分類
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      errorDetails.error = '網絡連接失敗';
+      errorDetails.category = 'network';
+    } else if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
+      errorDetails.error = '連接超時';
+      errorDetails.category = 'timeout';
+    } else if (error.response?.status === 401) {
+      errorDetails.error = 'API密鑰無效';
+      errorDetails.category = 'auth';
+    } else if (error.response?.status === 403) {
+      errorDetails.error = 'API訪問被拒絕';
+      errorDetails.category = 'auth';
+    } else if (error.response?.status === 429) {
+      errorDetails.error = 'API請求頻率限制';
+      errorDetails.category = 'rate_limit';
+    } else if (error.response?.status >= 500) {
+      errorDetails.error = 'DeepSeek服務器錯誤';
+      errorDetails.category = 'server';
+    } else {
+      errorDetails.error = error.message;
+      errorDetails.category = 'unknown';
+    }
+
+    res.json(errorDetails);
   }
 });
 

@@ -36,8 +36,27 @@ const BookingPage = () => {
     try {
       const response = await api.get('/api/ai/status');
       setAiStatus(response.data);
+      
+      // 如果AI服務不可用，顯示警告
+      if (response.data.status !== 'operational') {
+        console.warn('AI服務狀態異常:', response.data);
+        addMessage('system', `⚠️ AI服務狀態: ${response.data.error || '服務降級'}。系統將使用後備處理邏輯。`, {
+          type: 'warning',
+          category: response.data.category
+        });
+      }
     } catch (error) {
       console.error('檢查AI狀態失敗:', error);
+      setAiStatus({
+        status: 'error',
+        provider: 'Unknown',
+        apiConnected: false,
+        error: '無法連接到AI服務'
+      });
+      
+      addMessage('system', '⚠️ 無法連接到AI服務，系統將使用基本處理邏輯。', {
+        type: 'error'
+      });
     }
   };
 
@@ -104,11 +123,34 @@ const BookingPage = () => {
       }
     } catch (error) {
       console.error('AI解析錯誤:', error);
-      if (error.response?.data?.error) {
-        addMessage('ai', `❌ ${error.response.data.error}`);
-      } else {
-        addMessage('ai', '抱歉，處理您的請求時遇到了問題。請稍後再試。');
+      
+      let errorMessage = '抱歉，處理您的請求時遇到了問題。';
+      let errorType = 'error';
+      
+      if (error.response?.status === 503) {
+        errorMessage = '🔧 AI服務暫時不可用，請稍後再試。';
+        errorType = 'service_unavailable';
+      } else if (error.response?.status === 429) {
+        errorMessage = '⏳ 請求過於頻繁，請稍後再試。';
+        errorType = 'rate_limit';
+      } else if (error.response?.status >= 500) {
+        errorMessage = '🔧 服務器暫時出現問題，請稍後再試。';
+        errorType = 'server_error';
+      } else if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+        errorMessage = '⏰ 請求超時，請檢查網絡連接後重試。';
+        errorType = 'timeout';
+      } else if (error.code === 'ERR_NETWORK') {
+        errorMessage = '🌐 網絡連接失敗，請檢查網絡設置。';
+        errorType = 'network';
+      } else if (error.response?.data?.error) {
+        errorMessage = `❌ ${error.response.data.error}`;
+        errorType = 'api_error';
       }
+      
+      addMessage('ai', errorMessage, { 
+        type: errorType,
+        retryable: ['timeout', 'network', 'service_unavailable', 'server_error'].includes(errorType)
+      });
     } finally {
       setIsLoading(false);
     }
@@ -406,12 +448,22 @@ const BookingPage = () => {
             
             {/* AI狀態指示器 */}
             {aiStatus && (
-              <div className="flex items-center space-x-2 text-sm">
+              <div className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm ${
+                aiStatus.status === 'operational' 
+                  ? 'bg-green-50 text-green-700 border border-green-200' 
+                  : aiStatus.status === 'degraded'
+                  ? 'bg-yellow-50 text-yellow-700 border border-yellow-200'
+                  : 'bg-red-50 text-red-700 border border-red-200'
+              }`}>
                 <div className={`w-2 h-2 rounded-full ${
-                  aiStatus.apiConnected ? 'bg-green-400' : 'bg-yellow-400'
+                  aiStatus.status === 'operational' ? 'bg-green-500' :
+                  aiStatus.status === 'degraded' ? 'bg-yellow-500' : 'bg-red-500'
                 }`}></div>
-                <span className="text-primary-100">
-                  {aiStatus.provider} {aiStatus.apiConnected ? '已連接' : '備用模式'}
+                <span>
+                  {aiStatus.status === 'operational' 
+                    ? `AI服務正常 (${aiStatus.provider})` 
+                    : `AI服務異常: ${aiStatus.error || '未知錯誤'}`
+                  }
                 </span>
               </div>
             )}
