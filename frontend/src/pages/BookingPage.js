@@ -106,21 +106,15 @@ const BookingPage = () => {
 
     // 組合用戶輸入為自然語言
     let naturalLanguageText = '';
-    
     if (multiBookingEnabled) {
-      // 多個預訂模式：讓AI分析日期模式
-      naturalLanguageText = `我想${dateInput}在${venueInput}${timeInput}，用途是${purposeInput}`;
+      naturalLanguageText = `我想${dateInput}在${venueInput}${timeInput}，用途是${purposeInput}，聯絡人${contactInfo}`;
     } else {
-      // 單個預訂模式
-      naturalLanguageText = `我想${dateInput}${timeInput}預訂${venueInput}，用途是${purposeInput}`;
+      naturalLanguageText = `我想${dateInput}${timeInput}預訂${venueInput}，用途是${purposeInput}，聯絡人${contactInfo}`;
     }
 
-    addMessage('user', `預訂申請：
-📍 場地：${venueInput}
-📅 日期：${dateInput}
-🕐 時間：${timeInput}
-📝 用途：${purposeInput}
-${multiBookingEnabled ? '🔄 多個預訂模式已啟用' : ''}`);
+    // 自動發送給AI助手
+    addMessage('user', `預訂申請：\n📍 場地：${venueInput}\n📅 日期：${dateInput}\n🕒 時間：${timeInput}\n📝 用途：${purposeInput}\n📞 聯絡：${contactInfo}${multiBookingEnabled ? '\n🔄 多個預訂模式已啟用' : ''}`);
+    addMessage('user', naturalLanguageText);
 
     try {
       const userTimeInfo = getUserTimeInfo();
@@ -132,21 +126,16 @@ ${multiBookingEnabled ? '🔄 多個預訂模式已啟用' : ''}`);
         contactInfo,
         multiBookingEnabled,
         ...userTimeInfo,
+        naturalLanguageText // 新增：發送描述文本
       };
-
       // 調用AI解析API
       const response = await api.post('/api/ai', payload);
-
       const { success, canProceed, suggestions, error, help, parsed } = response.data;
-
       if (success && canProceed && suggestions.length > 0) {
         const aiProvider = parsed?.aiProvider || 'AI';
-        
-        // 檢查是否為重複預訂
         const isRecurring = suggestions.some(s => s.recurring && s.recurring.isRecurring);
-        
         if (isRecurring || multiBookingEnabled) {
-          addMessage('ai', `✅ AI已分析您的多個預訂需求！(由${aiProvider}提供支持)\n檢測到 ${suggestions.length} 個預訂時段`, {
+          addMessage('ai', `✅ AI已分析您的多個預訂需求！（由${aiProvider}提供支持）\n檢測到 ${suggestions.length} 個預訂時段`, {
             suggestions: suggestions,
             showConfirm: true,
             aiProvider: aiProvider,
@@ -155,7 +144,7 @@ ${multiBookingEnabled ? '🔄 多個預訂模式已啟用' : ''}`);
           });
         } else {
           const suggestion = suggestions[0];
-          addMessage('ai', `✅ AI已理解您的預訂需求！(由${aiProvider}提供支持)`, {
+          addMessage('ai', `✅ AI已理解您的預訂需求！（由${aiProvider}提供支持）`, {
             suggestion: suggestion,
             showConfirm: true,
             aiProvider: aiProvider,
@@ -178,9 +167,7 @@ ${multiBookingEnabled ? '🔄 多個預訂模式已啟用' : ''}`);
       }
     } catch (error) {
       console.error('AI解析錯誤:', error);
-      
-      let errorMessage = '抱歉，處理您的請求時遇到了問題。';
-      
+      let errorMessage = '抱歉，處理您的請求時遇到問題。';
       if (error.response?.status === 503) {
         errorMessage = '🔧 AI服務暫時不可用，請稍後再試。';
       } else if (error.response?.status === 429) {
@@ -190,7 +177,6 @@ ${multiBookingEnabled ? '🔄 多個預訂模式已啟用' : ''}`);
       } else if (error.response?.data?.error) {
         errorMessage = `❌ ${error.response.data.error}`;
       }
-      
       addMessage('ai', errorMessage, { showError: true });
     } finally {
       setIsLoading(false);
