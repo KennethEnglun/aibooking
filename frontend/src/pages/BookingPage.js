@@ -15,7 +15,7 @@ const BookingPage = () => {
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [contactInfo, setContactInfo] = useState('');
-  const [showContactModal, setShowContactModal] = useState(false);
+  // const [showContactModal, setShowContactModal] = useState(false); // 暫時未使用
   const [pendingBooking, setPendingBooking] = useState(null);
   const [aiStatus, setAiStatus] = useState({ status: 'checking', message: '檢查中...' });
   const messagesEndRef = useRef(null);
@@ -189,13 +189,13 @@ const BookingPage = () => {
     
     try {
              console.log('📤 發送預訂請求:', {
-         text: userMessage,
+         text: pendingBooking.originalText,
          contactInfo: contactInfo,
          isRecurring: pendingBooking.isRecurring
        });
        
        const response = await api.post('/api/ai/book', {
-         text: userMessage,
+         text: pendingBooking.originalText,
          contactInfo: contactInfo
        });
       
@@ -218,7 +218,7 @@ const BookingPage = () => {
         });
         
                  // 清空輸入
-         setUserMessage('');
+         setInputText('');
          setContactInfo('');
         
       } else {
