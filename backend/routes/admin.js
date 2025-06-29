@@ -8,7 +8,7 @@ const { getAllVenues } = require('../config/venues');
 require('dotenv').config();
 
 const router = express.Router();
-const bookingsFile = path.join(__dirname, '../data/bookings.json');
+const bookingsFile = path.join(__dirname, '../data/storage/bookings.json');
 
 // 環境變量診斷端點（僅開發環境或特殊查詢參數）
 router.get('/env-check', (req, res) => {
@@ -126,12 +126,21 @@ router.get('/schedule', (req, res) => {
     
     let filteredBookings = bookings.filter(b => b.status === 'confirmed'); // 只顯示已確認的預訂
     
-    // 按日期過濾
+    // 按日期過濾 - 根據預訂發生的日期（startTime）過濾，不是創建日期
     if (date) {
       const targetDay = moment.tz(date, ['YYYY-MM-DD','DD/MM/YYYY'], 'Asia/Hong_Kong');
-      filteredBookings = filteredBookings.filter(b => 
-        moment.tz(b.startTime, 'Asia/Hong_Kong').isSame(targetDay, 'day')
-      );
+      console.log(`過濾日期: ${targetDay.format('YYYY-MM-DD')}`);
+      
+      filteredBookings = filteredBookings.filter(b => {
+        const bookingStartDay = moment.tz(b.startTime, 'Asia/Hong_Kong');
+        const isSameDay = bookingStartDay.isSame(targetDay, 'day');
+        
+        if (isSameDay) {
+          console.log(`匹配預訂: ${b.id}, 開始時間: ${bookingStartDay.format('YYYY-MM-DD HH:mm')}, 場地: ${b.venueName}`);
+        }
+        
+        return isSameDay;
+      });
     }
     
     // 按場地過濾
@@ -140,7 +149,7 @@ router.get('/schedule', (req, res) => {
     }
     
     // 按時間排序
-    filteredBookings.sort((a, b) => moment(a.startTime).diff(moment(b.startTime)));
+    filteredBookings.sort((a, b) => moment.tz(a.startTime, 'Asia/Hong_Kong').diff(moment.tz(b.startTime, 'Asia/Hong_Kong')));
     
     // 為每個預訂添加場地名稱（如果缺失）
     const venues = getAllVenues();
@@ -152,6 +161,7 @@ router.get('/schedule', (req, res) => {
       return booking;
     });
     
+    console.log(`返回 ${filteredBookings.length} 個預訂記錄`);
     res.json(filteredBookings);
   } catch (error) {
     console.error('獲取時間表失敗:', error);

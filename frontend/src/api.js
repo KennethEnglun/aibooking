@@ -1,24 +1,38 @@
 import axios from 'axios';
 
-// 建立一個共享的 axios 實例，根據環境動態切換 API 基礎網址
-const getBaseURL = () => {
-  // 若在 Netlify 等前端託管平台上，建議於環境變數中設定 REACT_APP_API_BASE_URL
-  if (process.env.REACT_APP_API_BASE_URL) {
-    return process.env.REACT_APP_API_BASE_URL;
-  }
-
-  // 生產環境預設與前端同網域（例如 Railway 反向代理）
-  if (process.env.NODE_ENV === 'production') {
-    return '';
-  }
-
-  // 開發環境預設指向本機後端
-  return 'http://localhost:5000';
-};
+// 根據環境設置API基礎URL
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:3001';
 
 const api = axios.create({
-  baseURL: getBaseURL(),
-  timeout: 10000
+  baseURL: API_BASE_URL,
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
 });
+
+// 請求攔截器
+api.interceptors.request.use(
+  (config) => {
+    console.log(`API請求: ${config.method?.toUpperCase()} ${config.url}`);
+    return config;
+  },
+  (error) => {
+    console.error('API請求錯誤:', error);
+    return Promise.reject(error);
+  }
+);
+
+// 響應攔截器
+api.interceptors.response.use(
+  (response) => {
+    console.log(`API響應: ${response.status} ${response.config.url}`);
+    return response;
+  },
+  (error) => {
+    console.error('API響應錯誤:', error.response?.status, error.response?.data || error.message);
+    return Promise.reject(error);
+  }
+);
 
 export default api; 

@@ -10,12 +10,12 @@
     "health": "curl -f http://localhost:${PORT:-5000}/health || exit 1"
   },
   "dependencies": {
-    "express": "^4.18.2",
+    "axios": "^1.5.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "axios": "^1.5.0",
-    "moment-timezone": "^0.5.40",
+    "express": "^4.18.2",
     "moment": "^2.29.4",
+    "moment-timezone": "^0.5.48",
     "uuid": "^9.0.0"
   },
   "devDependencies": {
@@ -25,7 +25,12 @@
     "node": ">=18.0.0",
     "npm": ">=8.0.0"
   },
-  "keywords": ["ai", "booking", "api", "railway"],
+  "keywords": [
+    "ai",
+    "booking",
+    "api",
+    "railway"
+  ],
   "author": "AI Booking System",
   "license": "MIT"
-} 
+}

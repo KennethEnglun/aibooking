@@ -9,7 +9,13 @@
     "build": "cd frontend && npm run build",
     "test": "cd backend && npm test"
   },
-  "keywords": ["ai", "booking", "venues", "deepseek", "智能預訂"],
+  "keywords": [
+    "ai",
+    "booking",
+    "venues",
+    "deepseek",
+    "智能預訂"
+  ],
   "author": "AI Booking System",
   "license": "MIT",
   "engines": {
@@ -17,6 +23,7 @@
     "npm": ">=8.0.0"
   },
   "dependencies": {
+    "axios": "^1.10.0",
     "concurrently": "^8.2.2"
   }
-} 
+}

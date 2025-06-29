@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Calendar, MapPin, Clock, Users, Filter, RefreshCw } from 'lucide-react';
+import { Calendar, MapPin, Clock, Users, Filter, RefreshCw, Info } from 'lucide-react';
 import api from '../api';
 import moment from 'moment-timezone';
 moment.tz.setDefault('Asia/Hong_Kong');
@@ -12,21 +12,10 @@ const SchedulePage = () => {
   const [selectedVenue, setSelectedVenue] = useState('');
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'grid'
 
-  const fetchData = async () => {
+  // 獲取場地數據
+  const fetchVenues = async () => {
     try {
-      const [bookingsRes, venuesRes] = await Promise.all([
-        api.get('/api/bookings'),
-        api.get('/api/bookings/venues')
-      ]);
-
-      // /api/bookings 回傳 { success, data } 結構
-      if (bookingsRes.data && bookingsRes.data.success) {
-        setBookings(bookingsRes.data.data);
-      } else {
-        setBookings([]);
-      }
-
-      // venues API 回傳 { success, data: [...] }
+      const venuesRes = await api.get('/api/bookings/venues');
       if (venuesRes.data && venuesRes.data.success) {
         const allVenues = venuesRes.data.data;
         setVenues(allVenues);
@@ -36,37 +25,47 @@ const SchedulePage = () => {
         setVenues([]);
       }
     } catch (error) {
-      console.error('獲取數據失敗:', error);
+      console.error('獲取場地數據失敗:', error);
       setVenues([]);
-    } finally {
-      setLoading(false);
     }
   };
 
+  // 獲取預訂數據 - 根據選定日期和場地過濾
   const fetchBookings = useCallback(async () => {
     try {
+      setLoading(true);
       const params = new URLSearchParams();
       if (selectedDate) params.append('date', selectedDate);
       if (selectedVenue) params.append('venue', selectedVenue);
       
+      console.log(`正在獲取 ${selectedDate} 的預訂記錄...`);
       const response = await api.get(`/api/admin/schedule?${params}`);
       const resData = response.data;
+      
       if (Array.isArray(resData)) {
         setBookings(resData);
+        console.log(`成功獲取 ${resData.length} 個預訂記錄`);
       } else if (resData && resData.success) {
         setBookings(resData.data);
+        console.log(`成功獲取 ${resData.data.length} 個預訂記錄`);
       } else {
         setBookings([]);
+        console.log('沒有找到預訂記錄');
       }
     } catch (error) {
       console.error('獲取預訂數據失敗:', error);
+      setBookings([]);
+    } finally {
+      setLoading(false);
     }
   }, [selectedDate, selectedVenue]);
 
+  // 初始化加載場地數據
   useEffect(() => {
-    fetchData();
+    fetchVenues();
   }, []);
 
+  // 當日期或場地改變時重新獲取預訂數據
   useEffect(() => {
     fetchBookings();
   }, [selectedDate, selectedVenue, fetchBookings]);
@@ -108,10 +107,17 @@ const SchedulePage = () => {
 
   const timeSlots = Array.from({ length: 24 }, (_, i) => i);
 
+  // 刷新所有數據
+  const refreshData = () => {
+    fetchVenues();
+    fetchBookings();
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        <span className="ml-3 text-gray-600">正在加載時間表...</span>
       </div>
     );
   }
@@ -124,17 +130,28 @@ const SchedulePage = () => {
           <Calendar className="w-8 h-8 text-primary-600" />
           <div>
             <h1 className="text-3xl font-bold text-gray-900">場地時間表</h1>
-            <p className="text-gray-600">查看所有場地的預訂狀況</p>
+            <p className="text-gray-600">查看指定日期的場地預訂狀況</p>
           </div>
         </div>
         
         <button
-          onClick={fetchData}
+          onClick={refreshData}
           className="flex items-center space-x-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors"
         >
           <RefreshCw className="w-4 h-4" />
           <span>刷新</span>
         </button>
+      </div>
+
+      {/* 說明提示 */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-start space-x-3">
+          <Info className="w-5 h-5 text-blue-600 mt-0.5" />
+          <div className="text-sm text-blue-800">
+            <p className="font-medium mb-1">使用說明：</p>
+            <p>選擇左側的日期來查看該日期當天發生的預訂記錄。例如：選擇6月30日將顯示所有在6月30日進行的預訂活動，無論這些預訂是何時創建的。</p>
+          </div>
+        </div>
       </div>
 
       {/* 過濾器 */}
@@ -146,17 +163,18 @@ const SchedulePage = () => {
         
         <div className="grid md:grid-cols-4 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">日期</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">選擇日期</label>
             <input
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
+            <p className="text-xs text-gray-500 mt-1">顯示該日期的預訂活動</p>
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">場地</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">場地篩選</label>
             <select
               value={selectedVenue}
               onChange={(e) => setSelectedVenue(e.target.value)}
@@ -182,9 +200,10 @@ const SchedulePage = () => {
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">統計</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">當前統計</label>
             <div className="text-sm text-gray-600 pt-2">
-              今日預訂: {bookings.length} 個
+              <div>{moment(selectedDate).format('MM月DD日')} 預訂: {bookings.length} 個</div>
+              <div className="text-xs text-gray-500">已確認: {bookings.filter(b => b.status === 'confirmed').length} 個</div>
             </div>
           </div>
         </div>
@@ -193,12 +212,21 @@ const SchedulePage = () => {
       {/* 預訂列表/網格 */}
       {viewMode === 'list' ? (
         <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900">
+              {moment(selectedDate).format('YYYY年MM月DD日')} 的預訂記錄
+            </h3>
+            <p className="text-sm text-gray-600 mt-1">
+              顯示在選定日期當天進行的所有預訂活動
+            </p>
+          </div>
+          
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">場地</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">時間</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">活動時間</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用途</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">聯絡信息</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">狀態</th>
@@ -209,7 +237,10 @@ const SchedulePage = () => {
                   <tr>
                     <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
                       <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                      <p>選定條件下沒有預訂記錄</p>
+                      <p className="text-lg font-medium">沒有預訂記錄</p>
+                      <p className="text-sm">
+                        {moment(selectedDate).format('YYYY年MM月DD日')} 當天沒有安排任何預訂活動
+                      </p>
                     </td>
                   </tr>
                 ) : (
@@ -228,8 +259,12 @@ const SchedulePage = () => {
                         <div className="flex items-center">
                           <Clock className="w-4 h-4 text-gray-400 mr-2" />
                           <div className="text-sm text-gray-900">
-                            <div>{moment.tz(booking.startTime,'Asia/Hong_Kong').format('MM-DD HH:mm')}</div>
-                            <div className="text-gray-500">至 {moment.tz(booking.endTime,'Asia/Hong_Kong').format('HH:mm')}</div>
+                            <div className="font-medium">
+                              {moment.tz(booking.startTime,'Asia/Hong_Kong').format('HH:mm')} - {moment.tz(booking.endTime,'Asia/Hong_Kong').format('HH:mm')}
+                            </div>
+                            <div className="text-gray-500">
+                              {moment.tz(booking.startTime,'Asia/Hong_Kong').format('YYYY年MM月DD日')}
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -253,7 +288,14 @@ const SchedulePage = () => {
         </div>
       ) : (
         <div className="bg-white rounded-xl p-6 shadow-lg">
-          <h3 className="text-lg font-semibold mb-4">網格視圖 - {moment(selectedDate).format('YYYY年MM月DD日')}</h3>
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold mb-2">
+              網格視圖 - {moment(selectedDate).format('YYYY年MM月DD日')}
+            </h3>
+            <p className="text-sm text-gray-600">
+              顯示選定日期當天各場地的使用情況
+            </p>
+          </div>
           
           {Object.entries(getVenuesByType()).map(([type, typeVenues]) => (
             <div key={type} className="mb-8">
@@ -308,7 +350,7 @@ const SchedulePage = () => {
             <Calendar className="w-8 h-8 text-blue-600 mr-3" />
             <div>
               <div className="text-2xl font-bold text-gray-900">{bookings.length}</div>
-              <div className="text-sm text-gray-600">今日預訂</div>
+              <div className="text-sm text-gray-600">當日預訂</div>
             </div>
           </div>
         </div>
