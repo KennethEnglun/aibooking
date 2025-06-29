@@ -128,7 +128,7 @@ router.get('/schedule', (req, res) => {
     
     // 按日期過濾
     if (date) {
-      const targetDay = moment.tz(date, 'Asia/Hong_Kong');
+      const targetDay = moment.tz(date, ['YYYY-MM-DD','DD/MM/YYYY'], 'Asia/Hong_Kong');
       filteredBookings = filteredBookings.filter(b => 
         moment.tz(b.startTime, 'Asia/Hong_Kong').isSame(targetDay, 'day')
       );
