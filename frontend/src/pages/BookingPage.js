@@ -19,6 +19,7 @@ const BookingPage = () => {
   const [pendingBooking, setPendingBooking] = useState(null);
   const [aiStatus, setAiStatus] = useState({ status: 'checking', message: '檢查中...' });
   const messagesEndRef = useRef(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -171,81 +172,67 @@ const BookingPage = () => {
   };
 
   const handleConfirmBooking = (suggestion, isRecurring = false, suggestions = []) => {
-    if (isRecurring) {
-      setPendingBooking({ 
-        ...suggestion, 
-        isRecurring: true, 
-        allSuggestions: suggestions 
-      });
-    } else {
-      setPendingBooking(suggestion);
-    }
-    setShowContactModal(true);
+    console.log('🎯 確認預訂:', { suggestion, isRecurring, suggestions });
+    
+    setPendingBooking({ 
+      suggestion, 
+      isRecurring, 
+      suggestions: isRecurring ? suggestions : [suggestion]
+    });
+    setShowConfirmDialog(true);
   };
 
   const handleFinalBooking = async () => {
-    if (!contactInfo.trim() || !pendingBooking) return;
-
+    if (!pendingBooking) return;
+    
     setIsLoading(true);
+    
     try {
-      let bookingText;
-      if (pendingBooking.isRecurring) {
-        // 構建重複預訂的文本
-        const pattern = pendingBooking.allSuggestions[0].recurring.pattern;
-        bookingText = `${pattern}預訂${pendingBooking.venue.name}在${pendingBooking.formattedStartTime}用於${pendingBooking.purpose}`;
+             console.log('📤 發送預訂請求:', {
+         text: userMessage,
+         contactInfo: contactInfo,
+         isRecurring: pendingBooking.isRecurring
+       });
+       
+       const response = await api.post('/api/ai/book', {
+         text: userMessage,
+         contactInfo: contactInfo
+       });
+      
+      console.log('📥 預訂響應:', response.data);
+      
+      if (response.data.success) {
+        // 確保時間格式一致 - 使用標準格式處理
+        const processedBooking = {
+          ...response.data.booking,
+          // 統一時間格式處理，避免時區問題
+          startTime: response.data.booking.startTime,
+          endTime: response.data.booking.endTime
+        };
+        
+        addMessage('ai', '', {
+          booking: processedBooking,
+          recurringBookings: response.data.recurringBookings,
+          conflicts: response.data.conflicts,
+          showSuccess: true
+        });
+        
+                 // 清空輸入
+         setUserMessage('');
+         setContactInfo('');
+        
       } else {
-        bookingText = `預訂${pendingBooking.venue.name}在${pendingBooking.formattedTime}用於${pendingBooking.purpose}`;
+        addMessage('ai', '預訂失敗：' + response.data.error, { showError: true });
       }
       
-      const response = await api.post('/api/ai/book', {
-        text: bookingText,
-        contactInfo: contactInfo
-      });
-
-      if (response.data.success) {
-        let successMessage = '🎉 預訂成功！';
-        
-        // 如果是重複預訂，調整消息
-        if (response.data.bookings && response.data.bookings.length > 1) {
-          successMessage = `🎉 重複預訂成功！已創建 ${response.data.bookings.length} 個預訂。`;
-          
-          if (response.data.conflictDates && response.data.conflictDates.length > 0) {
-            successMessage += ` 其中 ${response.data.conflictDates.length} 個時段因衝突未能預訂。`;
-          }
-        }
-        
-        addMessage('ai', successMessage, {
-          booking: response.data.booking || response.data.bookings[0],
-          recurringBookings: response.data.bookings,
-          conflicts: response.data.conflictDates,
-          showSuccess: true,
-          aiProvider: response.data.aiProvider
-        });
-        setShowContactModal(false);
-        setContactInfo('');
-        setPendingBooking(null);
-      }
     } catch (error) {
-      if (error.response?.status === 409) {
-        // 處理衝突錯誤
-        const conflictData = error.response.data;
-        if (conflictData.conflicts) {
-          addMessage('ai', `❌ 重複預訂失敗：所有 ${conflictData.conflicts.length} 個時段都已被佔用。`, {
-            conflicts: conflictData.conflicts,
-            showError: true
-          });
-        } else {
-          addMessage('ai', '❌ 抱歉，該時段已被預訂。請選擇其他時間。', {
-            showError: true
-          });
-        }
-      } else {
-        console.error('預訂失敗:', error);
-        addMessage('ai', '❌ 預訂失敗，請稍後再試。');
-      }
-      setShowContactModal(false);
+      console.error('❌ 預訂失敗:', error);
+      const errorMessage = error.response?.data?.error || '預訂時發生錯誤，請稍後再試';
+      addMessage('ai', errorMessage, { showError: true });
     } finally {
       setIsLoading(false);
+      setShowConfirmDialog(false);
+      setPendingBooking(null);
     }
   };
 
@@ -355,7 +342,25 @@ const BookingPage = () => {
                 <div className="text-sm text-green-700 space-y-1">
                   <p><strong>預訂編號:</strong> {message.booking.id}</p>
                   <p><strong>場地:</strong> {message.booking.venueName}</p>
-                  <p><strong>時間:</strong> {moment(message.booking.startTime, 'YYYY-MM-DDTHH:mm:ss').format('YYYY-MM-DD HH:mm')} - {moment(message.booking.endTime, 'YYYY-MM-DDTHH:mm:ss').format('HH:mm')}</p>
+                  <p><strong>時間:</strong> {
+                    (() => {
+                      // 統一時間格式處理，確保顯示一致性
+                      let startMoment, endMoment;
+                      
+                      // 檢查時間格式並適當處理
+                      if (message.booking.startTime.includes('T')) {
+                        // ISO格式，直接使用moment解析
+                        startMoment = moment(message.booking.startTime);
+                        endMoment = moment(message.booking.endTime);
+                      } else {
+                        // 其他格式，指定解析格式
+                        startMoment = moment(message.booking.startTime, 'YYYY-MM-DD HH:mm:ss');
+                        endMoment = moment(message.booking.endTime, 'YYYY-MM-DD HH:mm:ss');
+                      }
+                      
+                      return `${startMoment.format('YYYY-MM-DD HH:mm')} - ${endMoment.format('HH:mm')}`;
+                    })()
+                  }</p>
                   <p><strong>用途:</strong> {message.booking.purpose}</p>
                 </div>
                 
@@ -370,11 +375,18 @@ const BookingPage = () => {
                       成功創建 {message.recurringBookings.length} 個預訂
                     </p>
                     <div className="text-xs text-blue-600 max-h-20 overflow-y-auto">
-                      {message.recurringBookings.slice(0, 5).map((booking, index) => (
-                        <div key={index}>
-                          {moment(booking.startTime, 'YYYY-MM-DDTHH:mm:ss').format('YYYY-MM-DD HH:mm')}
-                        </div>
-                      ))}
+                      {message.recurringBookings.slice(0, 5).map((booking, index) => {
+                        // 統一處理重複預訂的時間顯示
+                        const startMoment = booking.startTime.includes('T') 
+                          ? moment(booking.startTime) 
+                          : moment(booking.startTime, 'YYYY-MM-DD HH:mm:ss');
+                        
+                        return (
+                          <div key={index}>
+                            {startMoment.format('YYYY-MM-DD HH:mm')}
+                          </div>
+                        );
+                      })}
                       {message.recurringBookings.length > 5 && (
                         <div className="text-blue-500">
                           ...還有 {message.recurringBookings.length - 5} 個預訂
@@ -536,47 +548,58 @@ const BookingPage = () => {
         </div>
       </div>
 
-      {/* 聯絡信息模態框 */}
-      {showContactModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+      {/* 確認預訂對話框 */}
+      {showConfirmDialog && pendingBooking && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold mb-4">確認預訂信息</h3>
             
-            {pendingBooking && (
-              <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                <div className="space-y-2 text-sm">
-                  <div><strong>場地:</strong> {pendingBooking.venue.name}</div>
-                  <div><strong>時間:</strong> {pendingBooking.formattedTime}</div>
-                  <div><strong>用途:</strong> {pendingBooking.purpose}</div>
-                </div>
-              </div>
-            )}
-            
+            {/* 聯絡信息輸入 */}
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                聯絡信息 (姓名、電話或email)
+                聯絡信息 (姓名 - 電話)
               </label>
               <input
                 type="text"
                 value={contactInfo}
                 onChange={(e) => setContactInfo(e.target.value)}
-                placeholder="請輸入您的聯絡信息"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="例如：張三 - 12345678"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
+            </div>
+            
+            {/* 預訂詳情 */}
+            <div className="bg-gray-50 rounded-lg p-4 mb-4">
+              <div className="space-y-2 text-sm">
+                <div><strong>場地:</strong> {pendingBooking.suggestion.venue.name}</div>
+                <div><strong>時間:</strong> {pendingBooking.suggestion.formattedTime}</div>
+                <div><strong>用途:</strong> {pendingBooking.suggestion.purpose}</div>
+                
+                {pendingBooking.isRecurring && (
+                  <div className="mt-3 p-2 bg-blue-50 rounded border border-blue-200">
+                    <div className="text-blue-800 font-medium mb-1">重複預訂</div>
+                    <div className="text-blue-600 text-xs">
+                      將創建 {pendingBooking.suggestions.length} 個預訂
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             
             <div className="flex space-x-3">
               <button
-                onClick={() => setShowContactModal(false)}
-                className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-50 transition-colors"
-                disabled={isLoading}
+                onClick={() => {
+                  setShowConfirmDialog(false);
+                  setPendingBooking(null);
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
               >
                 取消
               </button>
               <button
                 onClick={handleFinalBooking}
                 disabled={!contactInfo.trim() || isLoading}
-                className="flex-1 bg-primary-600 text-white py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors"
+                className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLoading ? '處理中...' : '確認預訂'}
               </button>

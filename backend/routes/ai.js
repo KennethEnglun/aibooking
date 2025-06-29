@@ -57,13 +57,15 @@ const hasTimeConflict = (newBooking, existingBookings) => {
 // 創建重複預訂的函數
 const createRecurringBookings = async (bookingData, recurringInfo) => {
   const bookings = [];
-  const startTime = moment(bookingData.startTime);
-  const endTime = moment(bookingData.endTime);
+  
+  // 使用香港時區解析時間
+  const startTime = moment(bookingData.startTime).tz('Asia/Hong_Kong');
+  const endTime = moment(bookingData.endTime).tz('Asia/Hong_Kong');
   const duration = endTime.diff(startTime); // 計算持續時間（毫秒）
   
   console.log('🔄 開始創建重複預訂:', {
-    originalStart: startTime.format(),
-    originalEnd: endTime.format(),
+    originalStart: startTime.format('YYYY-MM-DD HH:mm'),
+    originalEnd: endTime.format('YYYY-MM-DD HH:mm'),
     duration: duration / (1000 * 60) + '分鐘',
     recurringType: recurringInfo.type,
     dayOfWeek: recurringInfo.dayOfWeek
@@ -99,8 +101,9 @@ const createRecurringBookings = async (bookingData, recurringInfo) => {
       id: uuidv4(),
       venueId: bookingData.venueId,
       venueName: bookingData.venueName,
-      startTime: bookingStartTime.toISOString(),
-      endTime: bookingEndTime.toISOString(),
+      // 使用簡單的本地時間格式，避免時區問題
+      startTime: bookingStartTime.format('YYYY-MM-DDTHH:mm:ss'),
+      endTime: bookingEndTime.format('YYYY-MM-DDTHH:mm:ss'),
       purpose: bookingData.purpose,
       contactInfo: bookingData.contactInfo,
       status: 'confirmed',
@@ -113,7 +116,9 @@ const createRecurringBookings = async (bookingData, recurringInfo) => {
     console.log(`📋 創建第${i+1}個重複預訂:`, {
       date: bookingStartTime.format('YYYY-MM-DD dddd'),
       time: `${bookingStartTime.format('HH:mm')} - ${bookingEndTime.format('HH:mm')}`,
-      venue: bookingData.venueName
+      venue: bookingData.venueName,
+      startTime: booking.startTime,
+      endTime: booking.endTime
     });
     
     bookings.push(booking);
@@ -163,6 +168,13 @@ ${venueList}
 5. 日期格式：香港格式日/月，如"1/7"表示7月1日，"15/3"表示3月15日
 6. 相對時間：準確理解"明天"、"後天"、"下星期一"等詞彙，基準時間為香港時區
 
+【重要時間理解規則】
+- "七月一號"、"7月1號"、"7月1日" = 當年7月1日
+- "星期二" = 如果提到具體日期，以該日期為準；如果沒有，則為下一個星期二
+- "下午一點至五點" = 13:00-17:00 (24小時制)
+- "上午十點" = 10:00
+- 必須保持日期和時間的準確性，不要隨意修改用戶指定的日期
+
 【輸出格式】
 請嚴格按照以下JSON格式返回，不要有任何其他文字：
 {
@@ -177,294 +189,181 @@ ${venueList}
   let response = null;
   let lastError = null;
   
-  // 創建專用的axios實例，優化網絡配置
-  const apiClient = axios.create({
-    timeout: 45000, // 降低到45秒避免長時間等待
-    headers: {
-      'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'User-Agent': 'AIBooking/2.0',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
-    },
-    maxRedirects: 3,
-    validateStatus: function (status) {
-      return status >= 200 && status < 300;
-    },
-    // 優化網絡連接
-    httpsAgent: new (require('https').Agent)({
-      keepAlive: true,
-      maxSockets: 50,
-      maxFreeSockets: 10,
-      timeout: 45000,
-      freeSocketTimeout: 30000
-    })
-  });
-  
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      console.log(`📡 調用DeepSeek API... (嘗試 ${attempt}/${maxRetries})`);
-      
-      const apiUrl = process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions';
-      console.log(`🎯 請求URL: ${apiUrl} (${attempt === 1 ? '首次' : '重試'})`);
-      
-      // 創建可取消的請求
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        console.log(`⏰ 請求超時(45s)，取消第${attempt}次嘗試`);
-        controller.abort();
-      }, 45000);
-      
-      const requestPayload = {
-        model: "deepseek-chat",
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt
-          },
-          {
-            role: "user", 
-            content: text
-          }
-        ],
-        temperature: 0.1,
-        max_tokens: 600, // 稍微降低以加快響應
-        top_p: 0.9,
-        stream: false // 確保不使用流式響應
-      };
-      
-      response = await apiClient.post(
-        apiUrl,
-        requestPayload,
-        {
-          signal: controller.signal,
-          // 為這個特定請求設置更短超時
-          timeout: 40000
-        }
-      );
-      
-      clearTimeout(timeoutId);
-      console.log(`✅ DeepSeek API調用成功 (第${attempt}次嘗試)`);
-      console.log(`📊 響應狀態: ${response.status}, 數據大小: ${JSON.stringify(response.data).length} 字符`);
-      break; // 成功則跳出重試循環
-      
-    } catch (apiError) {
-      lastError = apiError;
-      
-      // 更詳細的錯誤分類
-      let errorCategory = 'unknown';
-      let errorMsg = 'unknown error';
-      let shouldRetry = true;
-      
-      if (apiError.name === 'AbortError' || apiError.code === 'ECONNABORTED') {
-        errorCategory = 'timeout';
-        errorMsg = '請求超時/被中止';
-      } else if (apiError.code === 'ENOTFOUND' || apiError.code === 'ECONNREFUSED') {
-        errorCategory = 'network';
-        errorMsg = '網絡連接失敗';
-      } else if (apiError.code === 'ETIMEDOUT') {
-        errorCategory = 'timeout';
-        errorMsg = 'TCP連接超時';
-      } else if (apiError.response) {
-        errorCategory = 'http';
-        errorMsg = `HTTP ${apiError.response.status}`;
-        // 某些HTTP錯誤不應該重試
-        if (apiError.response.status === 401 || apiError.response.status === 403) {
-          shouldRetry = false;
-        }
-      } else if (apiError.request) {
-        errorCategory = 'network';
-        errorMsg = '無服務器響應';
-      } else {
-        errorCategory = 'config';
-        errorMsg = apiError.message;
-        shouldRetry = false; // 配置錯誤通常不應重試
-      }
-      
-      console.log(`❌ DeepSeek API調用失敗 (第${attempt}/${maxRetries}次) [${errorCategory}]: ${errorMsg}`);
-      
-      // 詳細錯誤信息
-      if (apiError.response) {
-        console.log(`📊 HTTP錯誤詳情: ${apiError.response.status} - ${JSON.stringify(apiError.response.data).substring(0, 200)}`);
-      } else {
-        console.log(`🔧 錯誤代碼: ${apiError.code}, 消息: ${apiError.message}`);
-      }
-      
-      // 如果不應該重試，直接跳出
-      if (!shouldRetry) {
-        console.log(`🚫 錯誤類型不適合重試，直接使用後備邏輯`);
-        break;
-      }
-      
-      if (attempt < maxRetries) {
-        // 根據錯誤類型調整延遲策略
-        let baseDelay;
-        if (errorCategory === 'timeout') {
-          baseDelay = Math.min(2000 * Math.pow(1.5, attempt - 1), 8000); // 超時錯誤用較短延遲
-        } else if (errorCategory === 'network') {
-          baseDelay = Math.min(3000 * Math.pow(2, attempt - 1), 12000); // 網絡錯誤用較長延遲
-        } else {
-          baseDelay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // 默認延遲
-        }
-        
-        const jitter = Math.random() * 1000; // 隨機抖動0-1秒
-        const delay = baseDelay + jitter;
-        
-        console.log(`⏳ 等待 ${Math.round(delay)}ms 後重試... (${errorCategory}錯誤策略)`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      } else {
-        console.error(`💥 所有 ${maxRetries} 次重試都失敗，最終錯誤:`, {
-          category: errorCategory,
-          message: lastError?.message,
-          code: lastError?.code,
-          httpStatus: lastError?.response?.status,
-          apiKey: process.env.DEEPSEEK_API_KEY ? '已配置' : '❌未配置',
-          apiUrl: process.env.DEEPSEEK_API_URL || '使用默認URL'
-        });
-      }
-    }
-  }
-  
-  if (!response) {
-    console.error('❌ DeepSeek API 徹底失敗，切換到後備模式');
-    console.log('🔄 使用後備處理邏輯');
-    return await enhancedFallbackProcessing(text);
-  }
-  
   try {
-    // 驗證響應數據
-    if (!response.data || !response.data.choices || !response.data.choices[0]) {
-      console.error('❌ API響應格式異常:', response.data);
-      console.log('🔄 使用後備處理邏輯');
-      return await enhancedFallbackProcessing(text);
-    }
-    
-    const aiResponse = response.data.choices[0].message.content.trim();
-    console.log('🤖 DeepSeek 原始回應:', aiResponse);
-    
-    // 清理回應，移除可能的markdown格式
-    let cleanedResponse = aiResponse;
-    if (aiResponse.includes('```')) {
-      const jsonMatch = aiResponse.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
-      if (jsonMatch) {
-        cleanedResponse = jsonMatch[1];
-      }
-    }
-    
-    console.log('🧹 清理後的回應:', cleanedResponse);
-    
-    // 嘗試解析AI回應
-    try {
-      const parsed = JSON.parse(cleanedResponse);
-      console.log('📋 解析後的數據:', parsed);
-      
-      // 智能場地匹配
-      let venue = null;
-      if (parsed.venue) {
-        venue = findVenueByName(parsed.venue);
-        console.log('🏢 場地匹配結果:', venue ? venue.name : '未找到');
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`📡 調用DeepSeek API... (嘗試 ${attempt}/${maxRetries})`);
         
-        // 如果精確匹配失敗，嘗試從原文本中提取
-        if (!venue) {
-          console.log('🔍 嘗試從原文本提取場地...');
-          venue = extractVenueFromText(text);
-        }
-      }
-      
-      // 🔧 開始智能時間處理...
-      console.log('🔧 開始智能時間處理...');
-      let startTime = null;
-      let endTime = null;
+        const requestBody = {
+          model: "deepseek-chat",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: text }
+          ],
+          max_tokens: 800,
+          temperature: 0.1,
+          stream: false
+        };
 
-      const baseMoment = getHongKongNow();
+        const requestConfig = {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(requestBody),
+          timeout: 30000
+        };
 
-      // 先嘗試 AI 回傳時間
-      let aiStartMoment = null;
-      let aiEndMoment = null;
-      if (parsed.startTime && parsed.endTime) {
-        aiStartMoment = moment(parsed.startTime).tz('Asia/Hong_Kong');
-        aiEndMoment   = moment(parsed.endTime).tz('Asia/Hong_Kong');
-        if (!(aiStartMoment.isValid() && aiEndMoment.isValid())) {
-          aiStartMoment = null;
-          aiEndMoment = null;
-        }
-      }
+        const apiUrl = process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions';
+        console.log(`🎯 請求URL: ${apiUrl} (${attempt === 1 ? '首次' : '重試'})`);
 
-      // 再使用本地正則解析
-      const localTimeResult = extractTimeFromText(text, baseMoment);
-      let localStartMoment = null, localEndMoment = null;
-      if (localTimeResult.startTime) {
-        localStartMoment = moment(localTimeResult.startTime);
-        localEndMoment = moment(localTimeResult.endTime);
-      }
-
-      // 選擇較合理時間：優先使用距現在最近且未過去的時間
-      const nowMoment = baseMoment.clone();
-      const chooseLocal = () => {
-        startTime = localTimeResult.startTime;
-        endTime = localTimeResult.endTime;
-        console.log('✅ 使用本地時間解析結果');
-      };
-
-      if (aiStartMoment && aiStartMoment.isAfter(nowMoment)) {
-        // AI 時間在未來
-        if (localStartMoment && localStartMoment.isAfter(nowMoment)) {
-          // 兩者皆在未來，選較接近現在者
-          const diffAi = Math.abs(aiStartMoment.diff(nowMoment));
-          const diffLocal = Math.abs(localStartMoment.diff(nowMoment));
-          if (diffLocal < diffAi) {
-            chooseLocal();
-          } else {
-            startTime = aiStartMoment.format('YYYY-MM-DDTHH:mm:ss');
-            endTime = aiEndMoment.format('YYYY-MM-DDTHH:mm:ss');
-            console.log('✅ 使用 AI 時間 (較接近現在)');
+        response = await fetch(apiUrl, requestConfig);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          lastError = new Error(`API請求失敗: ${response.status} ${response.statusText} - ${errorText}`);
+          console.error(`❌ DeepSeek API錯誤 (嘗試 ${attempt}):`, lastError.message);
+          
+          if (response.status === 429) {
+            const waitTime = Math.min(2000 * attempt, 10000);
+            console.log(`⏳ 遇到速率限制，等待 ${waitTime}ms 後重試...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            continue;
           }
-        } else {
-          // 本地無有效未來時間，使用 AI
-          startTime = aiStartMoment.format('YYYY-MM-DDTHH:mm:ss');
-          endTime = aiEndMoment.format('YYYY-MM-DDTHH:mm:ss');
-          console.log('✅ 使用 AI 時間');
+          
+          if (response.status >= 500) {
+            const waitTime = Math.min(1000 * attempt, 5000);
+            console.log(`⏳ 服務器錯誤，等待 ${waitTime}ms 後重試...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            continue;
+          }
+          
+          throw lastError;
         }
-      } else if (localStartMoment && localStartMoment.isAfter(nowMoment)) {
-        // 只本地有效
-        chooseLocal();
-      }
 
-      // 3. 若仍失敗，使用當前時間 +2 小時作為預設
-      if (!startTime) {
-        console.log('⚠️ 全部時間解析失敗，使用預設 2 小時');
-        const now = moment().tz('Asia/Hong_Kong');
-        startTime = now.format('YYYY-MM-DDTHH:mm:ss');
-        endTime   = now.add(2, 'hours').format('YYYY-MM-DDTHH:mm:ss');
-      }
-      
-      const result = {
-        venue: venue,
-        startTime: startTime,
-        endTime: endTime,
-        purpose: parsed.purpose || extractPurposeFromText(text),
-        confidence: venue && startTime ? Math.max(parsed.confidence || 0.8, 0.7) : 0.3,
-        aiProvider: 'DeepSeek',
-        debug: {
-          originalAiResponse: aiResponse,
-          parsedData: parsed,
-          venueFound: !!venue,
-          timeValid: !!startTime
+        const data = await response.json();
+        console.log(`✅ DeepSeek API調用成功 (第${attempt}次嘗試)`);
+        console.log(`📊 響應狀態: ${response.status}, 數據大小: ${JSON.stringify(data).length} 字符`);
+        
+        if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+          throw new Error('API響應格式錯誤: 缺少choices或message');
         }
-      };
-      
-      console.log('✅ AI處理結果:', result);
-      return result;
-      
-    } catch (parseError) {
-      console.error('❌ 解析AI回應失敗:', parseError.message);
-      console.log('🔄 使用後備解析邏輯');
-      return await enhancedFallbackProcessing(text);
+
+        const aiResponse = data.choices[0].message.content.trim();
+        console.log('🤖 DeepSeek 原始回應:', aiResponse);
+        
+        // 清理回應內容
+        const cleanedResponse = aiResponse
+          .replace(/```json\s*|\s*```/g, '')
+          .replace(/^[^{]*({.*})[^}]*$/s, '$1')
+          .trim();
+        
+        console.log('🧹 清理後的回應:', cleanedResponse);
+        
+        // 解析JSON
+        const parsed = JSON.parse(cleanedResponse);
+        console.log('📋 解析後的數據:', parsed);
+        
+        // 智能場地匹配
+        let venue = null;
+        if (parsed.venue) {
+          venue = findVenueByName(parsed.venue);
+          console.log('🏢 場地匹配結果:', venue ? venue.name : '未找到');
+          
+          // 如果精確匹配失敗，嘗試從原文本中提取
+          if (!venue) {
+            console.log('🔍 嘗試從原文本提取場地...');
+            venue = extractVenueFromText(text);
+          }
+        }
+        
+        // 🔧 開始智能時間處理...
+        console.log('🔧 開始智能時間處理...');
+        let startTime = null;
+        let endTime = null;
+
+        const baseMoment = getHongKongNow();
+
+        // 優先使用本地時間解析，確保準確性
+        console.log('🕐 優先使用本地時間解析，確保準確性');
+        const localTimeResult = extractTimeFromText(text, baseMoment);
+        
+        if (localTimeResult.startTime && localTimeResult.endTime) {
+          startTime = localTimeResult.startTime;
+          endTime = localTimeResult.endTime;
+          console.log('✅ 使用本地時間解析結果');
+        } else {
+          // 如果本地解析失敗，嘗試使用AI解析結果
+          console.log('🔄 本地解析失敗，嘗試使用AI解析結果');
+          if (parsed.startTime && parsed.endTime) {
+            try {
+              const aiStartMoment = moment(parsed.startTime).tz('Asia/Hong_Kong');
+              const aiEndMoment = moment(parsed.endTime).tz('Asia/Hong_Kong');
+              
+              if (aiStartMoment.isValid() && aiEndMoment.isValid()) {
+                // 檢查AI解析的時間是否合理（不能是過去時間）
+                const nowMoment = baseMoment.clone();
+                if (aiStartMoment.isAfter(nowMoment.subtract(1, 'day'))) {
+                  startTime = aiStartMoment.format('YYYY-MM-DDTHH:mm:ss');
+                  endTime = aiEndMoment.format('YYYY-MM-DDTHH:mm:ss');
+                  console.log('✅ 使用AI時間解析結果');
+                } else {
+                  console.log('⚠️ AI解析的時間太過過去，忽略');
+                }
+              }
+            } catch (e) {
+              console.log('⚠️ AI時間解析失敗:', e.message);
+            }
+          }
+        }
+
+        // 如果仍然失敗，使用預設時間
+        if (!startTime) {
+          console.log('⚠️ 全部時間解析失敗，使用預設 2 小時');
+          const now = moment().tz('Asia/Hong_Kong');
+          startTime = now.format('YYYY-MM-DDTHH:mm:ss');
+          endTime = now.add(2, 'hours').format('YYYY-MM-DDTHH:mm:ss');
+        }
+        
+        const result = {
+          venue: venue,
+          startTime: startTime,
+          endTime: endTime,
+          purpose: parsed.purpose || extractPurposeFromText(text),
+          confidence: venue && startTime ? Math.max(parsed.confidence || 0.8, 0.7) : 0.3,
+          aiProvider: 'DeepSeek',
+          debug: {
+            originalAiResponse: aiResponse,
+            parsedData: parsed,
+            venueFound: !!venue,
+            timeValid: !!startTime,
+            localTimeUsed: !!localTimeResult.startTime
+          }
+        };
+        
+        console.log('✅ AI處理結果:', result);
+        return result;
+        
+      } catch (error) {
+        lastError = error;
+        console.error(`❌ DeepSeek API調用失敗 (嘗試 ${attempt}):`, error.message);
+        
+        if (attempt < maxRetries) {
+          const waitTime = Math.min(1000 * attempt, 5000);
+          console.log(`⏳ 等待 ${waitTime}ms 後重試...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
     }
     
-  } catch (responseError) {
-    console.error('❌ 處理API響應失敗:', responseError.message);
+    console.error('❌ 所有DeepSeek API嘗試都失敗了');
+    console.log('🔄 切換到後備處理邏輯');
+    return await enhancedFallbackProcessing(text);
+    
+  } catch (error) {
+    console.error('❌ DeepSeek API處理發生意外錯誤:', error);
     console.log('🔄 使用後備處理邏輯');
     return await enhancedFallbackProcessing(text);
   }
@@ -603,7 +502,7 @@ const extractTimeFromText = (text, baseMoment) => {
   // 1. 解析具體日期 - 香港格式優先
   const datePatterns = [
     /(\d{4})年(\d{1,2})月(\d{1,2})(?:日|號)/,  // 2026年6月30日 或 2026年6月30號
-    /(\d{1,2})月(\d{1,2})(?:日|號)/,           // 6月30日 / 6月30號
+    /(\d{1,2})月(\d{1,2})(?:日|號)/,           // 6月30日 / 6月30號 / 7月1號
     /(\d{4})-(\d{1,2})-(\d{1,2})/,           // 2026-6-30
     /(\d{1,2})\/(\d{1,2})\/(\d{4})/,       // 1/7/2026 (日/月/年)
     /(\d{1,2})\/(\d{1,2})/,                  // 1/7 (日/月)
@@ -660,7 +559,8 @@ const extractTimeFromText = (text, baseMoment) => {
     }
   }
 
-  // 然後處理具體日期
+  // 處理具體日期，優先處理完整的日期表達
+  let dateFound = false;
   for (const pattern of datePatterns) {
     const match = text.match(pattern);
     if (match) {
@@ -671,17 +571,29 @@ const extractTimeFromText = (text, baseMoment) => {
           const day = parseInt(match[3]);
           baseMoment = baseMoment.year(year).month(month).date(day);
           console.log('📅 解析到完整日期:', baseMoment.format('YYYY-MM-DD'));
+          dateFound = true;
         } else if (match[0].includes('月')) {
-          const month = parseInt(match[1]) - 1;
-          const day = parseInt(match[2]);
+          // 處理中文月日表達，如"7月1號"
+          let month, day;
+          if (/[一二三四五六七八九十]/.test(match[1])) {
+            // 中文數字
+            month = chineseNumberToInt(match[1]) - 1;
+            day = chineseNumberToInt(match[2]);
+          } else {
+            // 阿拉伯數字
+            month = parseInt(match[1]) - 1;
+            day = parseInt(match[2]);
+          }
           baseMoment = baseMoment.month(month).date(day);
           console.log('📅 解析到月日:', baseMoment.format('YYYY-MM-DD'));
+          dateFound = true;
         } else if (match[0].includes('-')) {
           const year = parseInt(match[1]);
           const month = parseInt(match[2]) - 1;
           const day = parseInt(match[3]);
           baseMoment = baseMoment.year(year).month(month).date(day);
           console.log('📅 解析到數字日期:', baseMoment.format('YYYY-MM-DD'));
+          dateFound = true;
         } else if (match[0].includes('/')) {
           let year, month, day;
           if (match[4]) { // 格式: D/M/YYYY (香港格式: 日/月/年)
@@ -702,23 +614,37 @@ const extractTimeFromText = (text, baseMoment) => {
           }
           baseMoment = baseMoment.year(year).month(month).date(day);
           console.log('📅 解析到日期:', baseMoment.format('YYYY-MM-DD'));
-        } else if (match[0].includes('月') && /[一二三四五六七八九十]/.test(match[0])) {
-          // 中文數字月份/日子
-          const monthCn = match[1];
-          const dayCn = match[2];
-          const month = chineseNumberToInt(monthCn) - 1;
-          const day = chineseNumberToInt(dayCn);
-          const year = baseMoment.year();
-          console.log('📅 中文日期解析:', { year, month: month + 1, day });
-          baseMoment = baseMoment.year(year).month(month).date(day);
-          console.log('📅 解析到中文日期:', baseMoment.format('YYYY-MM-DD'));
+          dateFound = true;
         }
         
-        if (baseMoment.isValid()) {
+        if (baseMoment.isValid() && dateFound) {
           break;
         }
       } catch (e) {
         console.log('⚠️ 日期解析失敗:', e.message);
+      }
+    }
+  }
+  
+  // 如果找到了具體日期，檢查是否還有星期信息需要驗證或調整
+  if (dateFound) {
+    const weekdayPatterns = [
+      { pattern: /星期([一二三四五六日天])/, mapping: { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '日': 0, '天': 0 } },
+      { pattern: /週([一二三四五六日天])/, mapping: { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '日': 0, '天': 0 } }
+    ];
+    
+    for (const { pattern, mapping } of weekdayPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        const expectedWeekday = mapping[match[1]];
+        const actualWeekday = baseMoment.day();
+        console.log(`📅 星期驗證: 期望星期${match[1]}(${expectedWeekday}), 實際星期${actualWeekday}`);
+        
+        // 如果星期不匹配，優先相信具體日期，但記錄警告
+        if (expectedWeekday !== actualWeekday) {
+          console.log(`⚠️ 日期與星期不匹配，保持具體日期: ${baseMoment.format('YYYY-MM-DD')}`);
+        }
+        break;
       }
     }
   }
@@ -753,48 +679,48 @@ const extractTimeFromText = (text, baseMoment) => {
           if (match[1] && (match[1].includes('午') || match[1].includes('晚') || match[1].includes('早'))) {
             // 有時段的格式：下午三點至六點
             startPeriod = match[1];
-            startHour = chineseNumberToInt(match[2]);
-            startMinute = match[3] ? chineseNumberToInt(match[3]) : 0;
+            startHour = /\d/.test(match[2]) ? parseInt(match[2]) : chineseNumberToInt(match[2]);
+            startMinute = match[3] ? (/\d/.test(match[3]) ? parseInt(match[3]) : chineseNumberToInt(match[3])) : 0;
             
             if (match[4] && (match[4].includes('午') || match[4].includes('晚') || match[4].includes('早'))) {
               // 明確指定結束時段：下午三點至晚上六點
               endPeriod = match[4];
-              endHour = chineseNumberToInt(match[5]);
-              endMinute = match[6] ? chineseNumberToInt(match[6]) : 0;
+              endHour = /\d/.test(match[5]) ? parseInt(match[5]) : chineseNumberToInt(match[5]);
+              endMinute = match[6] ? (/\d/.test(match[6]) ? parseInt(match[6]) : chineseNumberToInt(match[6])) : 0;
             } else {
               // 只有開始時段：下午三點至六點
               endPeriod = startPeriod;
-              endHour = chineseNumberToInt(match[4]);
-              endMinute = match[5] ? chineseNumberToInt(match[5]) : 0;
+              endHour = /\d/.test(match[4]) ? parseInt(match[4]) : chineseNumberToInt(match[4]);
+              endMinute = match[5] ? (/\d/.test(match[5]) ? parseInt(match[5]) : chineseNumberToInt(match[5])) : 0;
             }
           } else {
             // 沒有時段的格式：三點至六點
-            startHour = chineseNumberToInt(match[1]);
-            startMinute = match[2] ? chineseNumberToInt(match[2]) : 0;
-            endHour = chineseNumberToInt(match[3]);
-            endMinute = match[4] ? chineseNumberToInt(match[4]) : 0;
+            startHour = /\d/.test(match[1]) ? parseInt(match[1]) : chineseNumberToInt(match[1]);
+            startMinute = match[2] ? (/\d/.test(match[2]) ? parseInt(match[2]) : chineseNumberToInt(match[2])) : 0;
+            endHour = /\d/.test(match[3]) ? parseInt(match[3]) : chineseNumberToInt(match[3]);
+            endMinute = match[4] ? (/\d/.test(match[4]) ? parseInt(match[4]) : chineseNumberToInt(match[4])) : 0;
             
-                         // 智能推斷時段 - 優先考慮下午時間
-             if (startHour >= 1 && startHour <= 6 && endHour >= 3 && endHour <= 11) {
-               // 1-6點且結束時間在3-11點之間，可能是下午時間
-               startPeriod = '下午';
-               endPeriod = '下午';
-             } else if (startHour <= 6) {
-               startPeriod = '早上';
-               endPeriod = '早上';
-             } else if (startHour <= 11) {
-               startPeriod = '上午';
-               endPeriod = '上午';
-             } else if (startHour <= 13) {
-               startPeriod = '中午';
-               endPeriod = '下午';
-             } else if (startHour <= 18) {
-               startPeriod = '下午';
-               endPeriod = '下午';
-             } else {
-               startPeriod = '晚上';
-               endPeriod = '晚上';
-             }
+            // 智能推斷時段 - 優先考慮下午時間
+            if (startHour >= 1 && startHour <= 6 && endHour >= 3 && endHour <= 11) {
+              // 1-6點且結束時間在3-11點之間，可能是下午時間
+              startPeriod = '下午';
+              endPeriod = '下午';
+            } else if (startHour <= 6) {
+              startPeriod = '早上';
+              endPeriod = '早上';
+            } else if (startHour <= 11) {
+              startPeriod = '上午';
+              endPeriod = '上午';
+            } else if (startHour <= 13) {
+              startPeriod = '中午';
+              endPeriod = '下午';
+            } else if (startHour <= 18) {
+              startPeriod = '下午';
+              endPeriod = '下午';
+            } else {
+              startPeriod = '晚上';
+              endPeriod = '晚上';
+            }
           }
           
           console.log('📋 時間範圍解析:', { 
@@ -810,25 +736,25 @@ const extractTimeFromText = (text, baseMoment) => {
           // 單一時間
           if (match[1] && (match[1].includes('午') || match[1].includes('晚') || match[1].includes('早'))) {
             startPeriod = match[1];
-            startHour = chineseNumberToInt(match[2]);
-            startMinute = match[3] ? chineseNumberToInt(match[3]) : 0;
+            startHour = /\d/.test(match[2]) ? parseInt(match[2]) : chineseNumberToInt(match[2]);
+            startMinute = match[3] ? (/\d/.test(match[3]) ? parseInt(match[3]) : chineseNumberToInt(match[3])) : 0;
           } else {
-            startHour = chineseNumberToInt(match[1]);
-            startMinute = match[2] ? chineseNumberToInt(match[2]) : 0;
+            startHour = /\d/.test(match[1]) ? parseInt(match[1]) : chineseNumberToInt(match[1]);
+            startMinute = match[2] ? (/\d/.test(match[2]) ? parseInt(match[2]) : chineseNumberToInt(match[2])) : 0;
             
-                         // 智能推斷時段 - 優先考慮下午時間
-             if (startHour >= 1 && startHour <= 6) {
-               // 1-6點，優先考慮下午
-               startPeriod = '下午';
-             } else if (startHour <= 11) {
-               startPeriod = '上午';
-             } else if (startHour <= 13) {
-               startPeriod = '中午';
-             } else if (startHour <= 18) {
-               startPeriod = '下午';
-             } else {
-               startPeriod = '晚上';
-             }
+            // 智能推斷時段 - 優先考慮下午時間
+            if (startHour >= 1 && startHour <= 6) {
+              // 1-6點，優先考慮下午
+              startPeriod = '下午';
+            } else if (startHour <= 11) {
+              startPeriod = '上午';
+            } else if (startHour <= 13) {
+              startPeriod = '中午';
+            } else if (startHour <= 18) {
+              startPeriod = '下午';
+            } else {
+              startPeriod = '晚上';
+            }
           }
           
           // 默認2小時
@@ -872,34 +798,37 @@ const extractTimeFromText = (text, baseMoment) => {
           endTime: endTime
         });
         
-        // --------------- 數字時間格式 HH:MM - HH:MM ---------------
-        if (pattern.source.includes('\\d{1,2}:')) {
-          const sHour = parseInt(match[1]);
-          const sMin  = parseInt(match[2]);
-          const eHour = parseInt(match[3]);
-          const eMin  = parseInt(match[4]);
-
-          let adjustedEndHour = eHour;
-          if (eHour < sHour || (eHour === sHour && eMin <= sMin)) {
-            adjustedEndHour += 24; // 跨日
-          }
-
-          const startMoment = baseMoment.clone().hour(sHour).minute(sMin).second(0);
-          let endMoment = baseMoment.clone().hour(adjustedEndHour % 24).minute(eMin).second(0);
-          if (adjustedEndHour >= 24) endMoment = endMoment.add(1, 'day');
-
-          startTime = startMoment.format('YYYY-MM-DDTHH:mm:ss');
-          endTime   = endMoment.format('YYYY-MM-DDTHH:mm:ss');
-
-          console.log('🕐 數字時間範圍解析:', { startTime, endTime });
-          break;
-        }
-        
         break;
         
       } catch (e) {
         console.log('⚠️ 時間解析失敗:', e.message);
       }
+    }
+  }
+  
+  // 處理數字時間格式 HH:MM - HH:MM
+  if (!startTime) {
+    const digitalTimePattern = /(\d{1,2}):(\d{2})\s?[\-至到]\s?(\d{1,2}):(\d{2})/;
+    const match = text.match(digitalTimePattern);
+    if (match) {
+      const sHour = parseInt(match[1]);
+      const sMin = parseInt(match[2]);
+      const eHour = parseInt(match[3]);
+      const eMin = parseInt(match[4]);
+
+      let adjustedEndHour = eHour;
+      if (eHour < sHour || (eHour === sHour && eMin <= sMin)) {
+        adjustedEndHour += 24; // 跨日
+      }
+
+      const startMoment = baseMoment.clone().hour(sHour).minute(sMin).second(0);
+      let endMoment = baseMoment.clone().hour(adjustedEndHour % 24).minute(eMin).second(0);
+      if (adjustedEndHour >= 24) endMoment = endMoment.add(1, 'day');
+
+      startTime = startMoment.format('YYYY-MM-DDTHH:mm:ss');
+      endTime = endMoment.format('YYYY-MM-DDTHH:mm:ss');
+
+      console.log('🕐 數字時間範圍解析:', { startTime, endTime });
     }
   }
   
