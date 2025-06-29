@@ -993,8 +993,8 @@ router.post('/', async (req, res) => {
       // 檢查時間字符串是否包含時區信息
       if (parsed.startTime.includes('Z') || parsed.startTime.includes('+') || parsed.startTime.includes('T') && parsed.startTime.length > 19) {
         // 包含時區信息，需要轉換為香港時區
-        startMoment = moment(parsed.startTime).utcOffset('+08:00');
-        endMoment = moment(parsed.endTime).utcOffset('+08:00');
+        startMoment = moment(parsed.startTime).utcOffset('+08:00', true);
+        endMoment = moment(parsed.endTime).utcOffset('+08:00', true);
       } else {
         // 不包含時區信息，直接作為本地時間處理
         startMoment = moment(parsed.startTime, 'YYYY-MM-DDTHH:mm:ss');
@@ -1011,8 +1011,8 @@ router.post('/', async (req, res) => {
         );
         
         recurringDates.forEach((dateInfo, index) => {
-          const recStartMoment = moment(dateInfo.startTime);
-          const recEndMoment = moment(dateInfo.endTime);
+          const recStartMoment = moment(dateInfo.startTime).utcOffset('+08:00', true);
+          const recEndMoment = moment(dateInfo.endTime).utcOffset('+08:00', true);
           
           const suggestion = {
             venue: parsed.venue,
