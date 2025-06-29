@@ -131,8 +131,26 @@ const createRecurringBookings = async (bookingData, recurringInfo) => {
       case 'daily':
         currentDate.add(1, 'day');
         break;
+      case 'alternate_day':
+        currentDate.add(2, 'days');
+        break;
+      case 'every_two_days':
+        currentDate.add(2, 'days');
+        break;
+      case 'every_three_days':
+        currentDate.add(3, 'days');
+        break;
       case 'monthly':
         currentDate.add(1, 'month');
+        break;
+      case 'monthly_weekday':
+        currentDate.add(1, 'month');
+        break;
+      case 'consecutive_days':
+        currentDate.add(1, 'day');
+        break;
+      default:
+        currentDate.add(1, 'day');
         break;
     }
   }
@@ -140,6 +158,26 @@ const createRecurringBookings = async (bookingData, recurringInfo) => {
   console.log(`✅ 生成了 ${bookings.length} 個重複預訂`);
   return bookings;
 };
+
+// 取得用戶本地時間與時區（優先）
+function getUserBaseMoment(req) {
+  const { localTime, timezone } = req.body || {};
+  let baseMoment;
+  if (localTime && timezone) {
+    try {
+      baseMoment = moment.tz(localTime, timezone);
+      if (!baseMoment.isValid()) throw new Error('Invalid localTime');
+      baseMoment.tz('Asia/Hong_Kong'); // 統一處理為香港時區
+      return baseMoment;
+    } catch (e) {
+      // fallback
+      baseMoment = moment.tz('Asia/Hong_Kong');
+    }
+  } else {
+    baseMoment = moment.tz('Asia/Hong_Kong');
+  }
+  return baseMoment;
+}
 
 // 使用DeepSeek API處理自然語言 - 終極穩定版本
 const processNaturalLanguageWithAI = async (text) => {
@@ -167,6 +205,7 @@ ${venueList}
 4. 時長：如果只說開始時間，默認2小時；如果說"至"某時間，計算實際時長
 5. 日期格式：香港格式日/月，如"1/7"表示7月1日，"15/3"表示3月15日
 6. 相對時間：準確理解"明天"、"後天"、"下星期一"等詞彙，基準時間為香港時區
+7. 多個預訂：識別重複模式如"逢星期一"、"每週二"、"隔天"、"每月第一個星期五"等
 
 【重要時間理解規則】
 - "七月一號"、"7月1號"、"7月1日" = 當年7月1日
@@ -284,7 +323,7 @@ ${venueList}
         let startTime = null;
         let endTime = null;
 
-        const baseMoment = getHongKongNow();
+        const baseMoment = getUserBaseMoment(req);
 
         // 優先使用本地時間解析，確保準確性
         console.log('🕐 優先使用本地時間解析，確保準確性');
@@ -380,29 +419,49 @@ const extractRecurringInfo = (text) => {
   const recurringPatterns = [
     { pattern: /逢(星期|週)([一二三四五六日天])/g, type: 'weekly' },
     { pattern: /每(星期|週)([一二三四五六日天])/g, type: 'weekly' },
+    { pattern: /隔天/g, type: 'alternate_day' },
+    { pattern: /隔日/g, type: 'alternate_day' },
+    { pattern: /每兩天/g, type: 'every_two_days' },
+    { pattern: /每三天/g, type: 'every_three_days' },
     { pattern: /每(個)?月/g, type: 'monthly' },
     { pattern: /逢月/g, type: 'monthly' },
+    { pattern: /每月第([一二三四五])個(星期|週)([一二三四五六日天])/g, type: 'monthly_weekday' },
     { pattern: /每天/g, type: 'daily' },
-    { pattern: /每日/g, type: 'daily' }
+    { pattern: /每日/g, type: 'daily' },
+    { pattern: /連續(\d+)天/g, type: 'consecutive_days' },
+    { pattern: /未來(\d+)個(星期|週|月)/g, type: 'future_period' }
   ];
   
   for (const { pattern, type } of recurringPatterns) {
     const match = pattern.exec(text);
     if (match) {
       let dayOfWeek = null;
+      let extraInfo = {};
+      
       if (type === 'weekly' && match[2]) {
         const dayMapping = {
           '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '日': 0, '天': 0
         };
         dayOfWeek = dayMapping[match[2]];
+      } else if (type === 'monthly_weekday' && match[1] && match[3]) {
+        const weekNumberMapping = { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5 };
+        const dayMapping = { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '日': 0, '天': 0 };
+        extraInfo.weekNumber = weekNumberMapping[match[1]];
+        extraInfo.dayOfWeek = dayMapping[match[3]];
+      } else if (type === 'consecutive_days' && match[1]) {
+        extraInfo.days = parseInt(match[1]);
+      } else if (type === 'future_period' && match[1]) {
+        extraInfo.count = parseInt(match[1]);
+        extraInfo.unit = match[2];
       }
       
-      console.log('📅 檢測到重複預訂:', { type, dayOfWeek, originalText: match[0] });
+      console.log('📅 檢測到重複預訂:', { type, dayOfWeek, extraInfo, originalText: match[0] });
       return { 
         type, 
         dayOfWeek, 
         isRecurring: true,
-        pattern: match[0]
+        pattern: match[0],
+        ...extraInfo
       };
     }
   }
@@ -446,8 +505,26 @@ const generateRecurringDates = (startTime, endTime, recurringInfo, maxOccurrence
       case 'daily':
         currentDate.add(1, 'day');
         break;
+      case 'alternate_day':
+        currentDate.add(2, 'days');
+        break;
+      case 'every_two_days':
+        currentDate.add(2, 'days');
+        break;
+      case 'every_three_days':
+        currentDate.add(3, 'days');
+        break;
       case 'monthly':
         currentDate.add(1, 'month');
+        break;
+      case 'monthly_weekday':
+        currentDate.add(1, 'month');
+        break;
+      case 'consecutive_days':
+        currentDate.add(1, 'day');
+        break;
+      default:
+        currentDate.add(1, 'day');
         break;
     }
   }
@@ -896,7 +973,7 @@ const enhancedFallbackProcessing = async (text) => {
   console.log('🔧 使用增強後備處理邏輯');
   
   const venue = extractVenueFromText(text);
-  const baseMoment = getHongKongNow();
+  const baseMoment = getUserBaseMoment(req);
   const timeResult = extractTimeFromText(text, baseMoment);
   const purpose = extractPurposeFromText(text);
   
